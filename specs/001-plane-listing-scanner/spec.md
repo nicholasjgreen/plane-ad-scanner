@@ -5,6 +5,18 @@
 **Status**: Draft
 **Input**: User description: "A personal tool that periodically scans aircraft-for-sale websites, identifies new or interesting plane listings based on my criteria, and presents them on a web page so I can review the market without manually checking sites every day."
 
+## Clarifications
+
+### Session 2026-03-30
+
+- Q: What fields identify a listing as a duplicate? → A: Aircraft registration number (e.g. G-ABCD). If registrations match, treat as the same aircraft and update the existing record. If no registration can be extracted, treat as a unique listing.
+- Q: Does feature 001 need its own scoring engine, or does it depend on feature 002? → A: Feature 001 includes a simple built-in scoring engine (type/price/year from a config file); feature 002 supersedes it later when integrated.
+- Q: What does the "new" badge on FR-011 mean? → A: A listing is "new" if it was found in the most recent scan run; the badge clears automatically when the next scan runs.
+- Q: What does the web page show before any scan has run? → A: A plain message: "No listings yet — run the scanner to populate the page."
+- Q: How are site scan failures surfaced on the web page? → A: A banner/alert section at the top of the page listing each failed site and its error.
+
+---
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - View Prioritised Listings on a Web Page (Priority: P1)
@@ -75,7 +87,7 @@ As a user, I want to filter the listing page by criteria such as aircraft type, 
 - What if a listing's price changes after first being seen — should it be updated and re-ranked?
 - How does the scanner handle structurally identical listings posted across multiple sites?
 - What if configuration criteria are invalid or missing?
-- What does the page show when no listings have been found yet?
+- What does the page show when no listings have been found yet? → Displays the message "No listings yet — run the scanner to populate the page."
 - What happens to previously fetched listings from a site that is subsequently disabled — are they hidden or retained?
 
 ## Requirements *(mandatory)*
@@ -84,20 +96,20 @@ As a user, I want to filter the listing page by criteria such as aircraft type, 
 
 - **FR-001**: The system MUST periodically scan all enabled sites (as managed by feature 003) for listings on a configurable schedule.
 - **FR-002**: The system MUST allow the user to configure matching criteria including aircraft type/model, price range, location, and year range.
-- **FR-003**: The system MUST track which listings have already been seen to prevent duplicates appearing multiple times in the list.
+- **FR-003**: The system MUST deduplicate listings by aircraft registration number (e.g. G-ABCD). If two scraped listings share the same registration, they are treated as the same aircraft; the existing record is updated rather than a new one created. If no registration can be extracted from a listing, it is treated as a unique listing regardless of other fields.
 - **FR-004**: The system MUST persist all discovered listings so the web page always has a full picture of the market.
 - **FR-005**: Each listing record MUST include: aircraft type, asking price, location, listing year, source site, date first found, date last seen, and a direct URL to the listing.
-- **FR-006**: The system MUST assign each listing a match score based on the configured criteria and persist that score.
+- **FR-006**: The system MUST assign each listing a match score based on the configured criteria and persist that score. In feature 001, scoring is performed by a simple built-in engine reading criteria from a config file (type/price/year rules). This engine is superseded by feature 002's Matcher agent when feature 002 is integrated.
 - **FR-007**: The system MUST serve a web page that displays all listings ordered by match score (highest first).
 - **FR-008**: The web page MUST be accessible on localhost without authentication.
-- **FR-009**: The system MUST continue scanning remaining enabled sites if one site fails, and surface the failure on the web page.
+- **FR-009**: The system MUST continue scanning remaining enabled sites if one site fails, and surface the failure on the web page as a banner/alert at the top of the page listing each failed site and its error message.
 - **FR-010**: The system MUST persist listing state across runs so history survives restarts.
-- **FR-011**: The web page SHOULD indicate which listings were found in the most recent scan (e.g., a "new" badge).
+- **FR-011**: The web page SHOULD indicate which listings were found in the most recent scan run with a "new" badge. The badge is shown for all listings whose `date_last_seen` matches the most recent `ScanRun` timestamp, and clears automatically when the next scan runs.
 - **FR-012**: The web page SHOULD display the timestamp of the last successful scan.
 
 ### Key Entities
 
-- **Listing**: A single aircraft-for-sale ad — aircraft type, asking price, location, year, listing URL, source site, date first found, date last seen, and current match score.
+- **Listing**: A single aircraft-for-sale ad — aircraft registration (nullable), aircraft type, asking price, location, year, listing URL, source site, date first found, date last seen, and current match score. Registration is the deduplication key when present.
 - **Criteria**: User-defined filter and ranking rules that determine how interesting a listing is (type pattern, price bounds, year range, location).
 - **ScanRun**: A record of a single scanner execution — timestamp, sites attempted, sites succeeded, sites failed, and listings found.
 
@@ -117,7 +129,7 @@ As a user, I want to filter the listing page by criteria such as aircraft type, 
 - The initial target sites are publicly accessible without authentication (no login required to browse listings).
 - The tool runs on a single personal machine or server (not distributed); the web page is local-only.
 - Site lifecycle management (adding, enabling, disabling, verifying sites) is handled by feature 003; this feature consumes the enabled site list it produces.
-- Interest profile and criteria management (profile setup, criterion types, scoring, weighted ranking) is handled by feature 002; this feature consumes the match scores it produces. The `Criteria` entity in this spec is superseded by feature 002's `InterestProfile` and `ProfileCriterion` entities.
+- Feature 001 includes a simple built-in scoring engine (type/price/year criteria from a config file) so it is functional in isolation. When feature 002 is integrated, its Matcher agent supersedes this engine and the `Criteria` entity in this spec is replaced by feature 002's `InterestProfile` and `ProfileCriterion` entities.
 - Listings from a disabled site are retained in the database and remain visible on the page; they are not purged when a site is disabled.
 - Price changes to already-seen listings will not trigger re-ranking in v1; the original match score is retained.
 - Removed listings will not be hidden automatically in v1 — they remain in the list.
