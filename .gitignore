@@ -1,3 +1,6 @@
+# SQLite database (runtime data)
+data/listings.db
+
 # Logs
 logs
 *.log

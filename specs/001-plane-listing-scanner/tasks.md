@@ -19,12 +19,12 @@
 
 **Purpose**: Project initialization and toolchain — required before any code is written.
 
-- [ ] T001 Initialise Node.js project: create `package.json` with all dependencies (`@anthropic-ai/sdk`, `express`, `cheerio`, `better-sqlite3`, `node-cron`, `zod`, `pino`, `js-yaml`) and devDependencies (`typescript`, `tsx`, `vitest`, `eslint`, `prettier`, `@types/*`)
-- [ ] T002 Create `tsconfig.json` with `strict: true`, `module: NodeNext`, `target: ES2022`, rootDir `src`, outDir `dist`
-- [ ] T003 [P] Create `vitest.config.ts` pointing at `tests/**/*.test.ts`; add `npm test` script to `package.json`
-- [ ] T004 [P] Create `.eslintrc.json` and `.prettierrc` for TypeScript; add `npm run lint` and `npm run lint:fix` scripts to `package.json`
-- [ ] T005 [P] Create `config.yml.example` with all sections populated (schedule, web.port, agent config, example criteria, example sites) based on `contracts/config-schema.md`
-- [ ] T006 [P] Create `.env.example` with `ANTHROPIC_API_KEY=` and `LOG_LEVEL=info` placeholders; create `data/.gitkeep` to ensure `data/` directory is tracked
+- [X] T001 Initialise Node.js project: create `package.json` with all dependencies (`@anthropic-ai/sdk`, `express`, `cheerio`, `better-sqlite3`, `node-cron`, `zod`, `pino`, `js-yaml`) and devDependencies (`typescript`, `tsx`, `vitest`, `eslint`, `prettier`, `@types/*`)
+- [X] T002 Create `tsconfig.json` with `strict: true`, `module: NodeNext`, `target: ES2022`, rootDir `src`, outDir `dist`
+- [X] T003 [P] Create `vitest.config.ts` pointing at `tests/**/*.test.ts`; add `npm test` script to `package.json`
+- [X] T004 [P] Create `eslint.config.js` and `.prettierrc` for TypeScript; add `npm run lint` and `npm run lint:fix` scripts to `package.json`
+- [X] T005 [P] Create `config.yml.example` with all sections populated (schedule, web.port, agent config, example criteria, example sites) based on `contracts/config-schema.md`
+- [X] T006 [P] Create `.env.example` with `ANTHROPIC_API_KEY=` and `LOG_LEVEL=info` placeholders; create `data/.gitkeep` to ensure `data/` directory is tracked
 
 ---
 
@@ -32,9 +32,9 @@
 
 **Purpose**: Core infrastructure — DB schema, config loading, and logger — that all user stories depend on. **No user story work can begin until this phase is complete.**
 
-- [ ] T007 Write SQL migration `src/db/migrations/001-initial.sql` — create `listings`, `scan_runs`, and `sites` tables with all indexes as specified in `data-model.md`
-- [ ] T008 Implement `src/db/index.ts` — open SQLite connection (`better-sqlite3`), run all pending `src/db/migrations/*.sql` files in filename order at startup, export `db` singleton; seed `sites` table from `config.yml` if table is empty
-- [ ] T009 [P] Implement `src/config.ts` — load `config.yml` (path overridable via `CONFIG_PATH` env var), validate with `zod` `ConfigSchema` (all types from `contracts/config-schema.md`), abort with human-readable error on invalid config, export typed `Config`; also initialise `pino` logger (respects `LOG_LEVEL` env var) and export it
+- [X] T007 Write SQL migration `src/db/migrations/001-initial.sql` — create `listings`, `scan_runs`, and `sites` tables with all indexes as specified in `data-model.md`
+- [X] T008 Implement `src/db/index.ts` — open SQLite connection (`better-sqlite3`), run all pending `src/db/migrations/*.sql` files in filename order at startup, export `db` singleton; seed `sites` table from `config.yml` if table is empty
+- [X] T009 [P] Implement `src/config.ts` — load `config.yml` (path overridable via `CONFIG_PATH` env var), validate with `zod` `ConfigSchema` (all types from `contracts/config-schema.md`), abort with human-readable error on invalid config, export typed `Config`; also initialise `pino` logger (respects `LOG_LEVEL` env var) and export it
 
 **Checkpoint**: DB schema applied, config loads and validates, logger available — user story implementation can now begin.
 

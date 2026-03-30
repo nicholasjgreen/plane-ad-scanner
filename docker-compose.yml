@@ -1,0 +1,43 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persist SQLite database between runs
+      - ./data:/app/data
+      # User-supplied config (must exist before starting)
+      - ./config.yml:/app/config.yml:ro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    # Restart automatically unless manually stopped
+    restart: unless-stopped
+
+  # One-off scan (docker compose run scan)
+  scan:
+    build: .
+    command: npm run scan
+    volumes:
+      - ./data:/app/data
+      - ./config.yml:/app/config.yml:ro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    profiles:
+      - scan
+
+  # Web server only, no scheduler (docker compose run serve)
+  serve:
+    build: .
+    command: npm run serve
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+      - ./config.yml:/app/config.yml:ro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    profiles:
+      - serve

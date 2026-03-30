@@ -8,13 +8,29 @@ This is the foundation feature. It provides the scanner, the database, the built
 
 ## Prerequisites
 
-- Node.js LTS (v20+)
-- npm
-- `ANTHROPIC_API_KEY` set in your environment (required for Scraper and Matcher agents)
+**Option A — Docker (recommended, avoids Node.js installation issues)**:
+- Docker + Docker Compose
+
+**Option B — local Node.js**:
+- Node.js LTS (v20+) running on Linux/macOS
+- `ANTHROPIC_API_KEY` set in your environment
 
 ---
 
 ## Installation
+
+### Docker (recommended)
+
+```bash
+cp config.yml.example config.yml
+# Edit config.yml
+cp .env.example .env
+# Add ANTHROPIC_API_KEY to .env
+
+docker compose build
+```
+
+### Local Node.js
 
 ```bash
 npm install

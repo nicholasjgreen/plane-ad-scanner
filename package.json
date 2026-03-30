@@ -1,0 +1,48 @@
+{
+  "name": "plane-ad-scanner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Periodically scans aircraft-for-sale websites and presents ranked listings on a local web page",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "tsx src/web/server.ts",
+    "scan": "tsx src/cli/scan.ts",
+    "serve": "SERVE_ONLY=true tsx src/web/server.ts",
+    "build": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "better-sqlite3": "^11.0.0",
+    "cheerio": "^1.0.0",
+    "express": "^4.21.0",
+    "js-yaml": "^4.1.0",
+    "node-cron": "^3.0.3",
+    "pino": "^9.0.0",
+    "uuid": "^11.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^4.17.21",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.0.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/uuid": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "prettier": "^3.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
