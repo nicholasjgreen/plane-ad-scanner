@@ -148,3 +148,4 @@ As an admin, I want to see all configured sites in one view with their status, l
 - Listings already stored from a site that is subsequently disabled are retained and remain visible in the listing view; this feature does not purge historical listing data.
 - The automated discovery process runs on a configurable schedule; the default cadence is an implementation choice.
 - Priority ordering is a simple integer rank; drag-and-drop reordering UI is out of scope for v1.
+- All admin actions (add site, disable, re-verify, approve/dismiss discovery candidates, set priority order) are performed via a dedicated admin/config web page served alongside the main listing page. The main listing page (feature 001) remains read-only; the admin page is a separate route.

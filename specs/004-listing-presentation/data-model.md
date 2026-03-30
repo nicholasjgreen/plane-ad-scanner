@@ -35,9 +35,13 @@ Stores AI-generated content for each listing. One row per listing, keyed by `lis
 
 ```
 listings (1) ──── (0..1) listing_ai
-listings (N) ──── (1)    sites          [from feature 003]
-listings (N) ──── (N)    profiles       [scored by Matcher — from feature 002]
+listings (N) ──── (1)    sites              [from feature 003]
+listings (N) ──── (N)    profiles           [scored by Matcher — from feature 002]
+listings (1) ──── (N)    listing_scores     [owned by feature 002; read-only here]
+listing_scores (1) ── (N) evidence_items   [owned by feature 002; read-only here]
 ```
+
+> **Read-only dependency**: The structured evidence displayed in the expanded view (FR-013) is stored in feature 002's `listing_scores` and `evidence_items` tables (exact names TBD when feature 002 is planned). This feature reads that data but does not own, write, or duplicate it. The `ListingExpandedData.profileScores` contract shape (see `contracts/listing-card.md`) defines how that data is projected for the template.
 
 ---
 

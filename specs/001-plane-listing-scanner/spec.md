@@ -117,6 +117,7 @@ As a user, I want to filter the listing page by criteria such as aircraft type, 
 - The initial target sites are publicly accessible without authentication (no login required to browse listings).
 - The tool runs on a single personal machine or server (not distributed); the web page is local-only.
 - Site lifecycle management (adding, enabling, disabling, verifying sites) is handled by feature 003; this feature consumes the enabled site list it produces.
+- Interest profile and criteria management (profile setup, criterion types, scoring, weighted ranking) is handled by feature 002; this feature consumes the match scores it produces. The `Criteria` entity in this spec is superseded by feature 002's `InterestProfile` and `ProfileCriterion` entities.
 - Listings from a disabled site are retained in the database and remain visible on the page; they are not purged when a site is disabled.
 - Price changes to already-seen listings will not trigger re-ranking in v1; the original match score is retained.
 - Removed listings will not be hidden automatically in v1 — they remain in the list.

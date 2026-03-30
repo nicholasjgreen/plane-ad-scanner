@@ -107,6 +107,8 @@ As a buyer whose interests evolve over time, I want the plain-English explanatio
 - **FR-010**: Explanations MUST be regenerated at the next scheduled scan after the user's active interest profiles change. No immediate background regeneration is required; the previous explanation remains visible in the interim.
 - **FR-011**: While explanation regeneration is in progress, the previous explanation MUST remain visible. If no previous explanation exists and generation fails, a neutral placeholder MUST be shown (e.g. "Summary not yet available for this listing") rather than a blank or error state.
 - **FR-012**: The explanation MUST honestly represent partial matches, noting both strengths and gaps relative to the user's stated interests.
+- **FR-013**: The expanded view MUST display the structured evidence from feature 002 below the plain-English explanation — showing each criterion, whether it matched, its score contribution, and any inference confidence notes.
+- **FR-014**: The structured evidence section MUST be visually subordinate to the plain-English explanation (e.g. collapsed by default or rendered in a smaller weight) so the narrative remains the primary read.
 
 ### Key Entities
 

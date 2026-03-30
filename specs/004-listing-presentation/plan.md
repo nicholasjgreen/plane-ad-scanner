@@ -5,7 +5,7 @@
 
 ## Summary
 
-For each stored aircraft listing, the system generates an AI-written headline (from the listing's intrinsic data) and a plain-English explanation of why it matches the user's interest profiles. Both are produced at scan time by a new **Presenter agent** and stored in a dedicated `listing_ai` table. The web page (extended from feature 001) renders listings as expandable cards using native `<details>`/`<summary>` HTML — no JavaScript framework required. Expanding a card reveals the explanation and a full image gallery. Thumbnails are selected at scrape time using a priority heuristic (`og:image` first) and stored as URLs served directly as `<img src>` tags.
+For each stored aircraft listing, the system generates an AI-written headline (from the listing's intrinsic data) and a plain-English explanation of why it matches the user's interest profiles. Both are produced at scan time by a new **Presenter agent** and stored in a dedicated `listing_ai` table. The web page (extended from feature 001) renders listings as expandable cards using native `<details>`/`<summary>` HTML — no JavaScript framework required. Expanding a card reveals: (1) the plain-English explanation, (2) a structured evidence breakdown (per-profile scores and per-criterion match data produced by feature 002's Matcher), and (3) a full image gallery. Thumbnails are selected at scrape time using a priority heuristic (`og:image` first) and stored as URLs served directly as `<img src>` tags. Evidence data is read from feature 002's score tables — this feature does not own or duplicate it.
 
 ## Technical Context
 
@@ -67,13 +67,15 @@ plane-ad-scanner/
 │   ├── db/
 │   │   ├── migrations/
 │   │   │   └── 004-listing-ai.sql # NEW: thumbnail_url, all_image_urls, listing_ai table
-│   │   └── listing-ai.ts          # NEW: read/write listing_ai table
+│   │   └── listing-ai.ts          # NEW: read/write listing_ai; read profile scores/evidence
+│   │                              #      from feature 002's tables (read-only dependency)
 │   ├── services/
 │   │   └── presentation.ts        # NEW: regenerate-ai CLI + profile-change detection
 │   └── web/
 │       ├── server.ts              # extend: pass ListingExpandedData to template
 │       └── templates/
-│           └── listings.html      # extend: <details> card pattern, explanation, gallery
+│           └── listings.html      # extend: <details> card pattern, explanation,
+│                                  #         structured evidence section, gallery
 └── tests/
     ├── unit/
     │   ├── presenter.test.ts      # NEW: output validation, truncation, placeholder logic
@@ -99,6 +101,7 @@ plane-ad-scanner/
 | Headline/explanation prompt | Few-shot, structured JSON output, single LLM call per listing |
 | Card expand/collapse UI | Native `<details>`/`<summary>` — zero JavaScript required |
 | AI content schema | Separate `listing_ai` table with FK; `status` + `model_ver` for regeneration lifecycle |
+| Evidence display source | Evidence/scores owned by feature 002's Matcher; this feature reads them — no duplication |
 
 ## Phase 1: Design
 

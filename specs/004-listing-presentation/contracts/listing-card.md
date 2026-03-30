@@ -41,13 +41,29 @@ Populated when a `<details>` element is opened. Rendered server-side alongside t
 
 ```typescript
 interface ListingExpandedData extends ListingCardData {
-  explanation: string | null;     // null → show placeholder message
+  explanation: string | null;         // null → show placeholder message
   explanationStatus: 'ready' | 'pending' | 'failed';
-  allImageUrls: string[];         // empty array if no images available
+  allImageUrls: string[];             // empty array if no images available
+  // Structured evidence from feature 002 — displayed below the explanation:
+  profileScores: ProfileScore[];      // one entry per active profile
   // Additional listing fields for the expanded facts section:
   location: string | null;
-  listingDate: string | null;     // date the listing appeared on the source site
+  listingDate: string | null;         // date the listing appeared on the source site
   rawAttributes: Record<string, string>; // any additional scraped key/value pairs
+}
+
+interface ProfileScore {
+  profileName: string;
+  score: number;                      // 0–100
+  evidence: EvidenceItem[];
+}
+
+interface EvidenceItem {
+  criterionName: string;
+  matched: boolean;
+  contribution: number;               // points contributed to profile score
+  note: string;                       // human-readable explanation
+  inferenceConfidence?: 'high' | 'medium' | 'low'; // present only when inferred
 }
 ```
 
