@@ -43,9 +43,11 @@ async function llmExtract(
   const origin = new URL(siteUrl).origin;
   const trimmed = html.slice(0, 40_000);
 
+  // Cap output tokens — scraper only returns a JSON array, 4096 is ample.
+  // token_budget_per_run controls spend, not per-call output size.
   const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: maxTokens,
+    max_tokens: Math.min(maxTokens, 4096),
     system: `You extract aircraft-for-sale listings from HTML into JSON.
 Return ONLY a JSON array of objects with these fields (omit absent fields):
 - listingUrl: string (required; relative URLs → prepend ${origin})

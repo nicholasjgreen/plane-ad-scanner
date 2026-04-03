@@ -1,0 +1,52 @@
+# plane-ad-scanner configuration
+# Copy to config.yml and edit to suit your search criteria.
+
+# Cron expression for automatic scanning (node-cron format).
+# Default: every 6 hours. Set to null to disable automatic scheduling.
+schedule: "0 */6 * * *"
+
+web:
+  port: 3000
+
+agent:
+  token_budget_per_run: 50000   # Max tokens across all agents in one scan run
+  max_turns_per_agent: 10       # Max tool-call turns per agent invocation
+  scraper_model: "claude-haiku-4-5-20251001"   # Model for Scraper agents (fast, low cost)
+  matcher_model: "claude-sonnet-4-6"           # Model for Matcher agent (better reasoning)
+  require_approval: false       # When true, pauses after scoring for user confirmation
+
+# Interest criteria for the built-in scoring engine.
+# Each listing is scored 0–100 based on how many criteria it satisfies (weighted).
+# Superseded by feature 002's InterestProfile system when integrated.
+criteria:
+  - type: type_match
+    pattern: "cessna 172"   # Case-insensitive match against aircraft type, make, or model
+    weight: 3
+
+  - type: price_range
+    min: 20000
+    max: 80000              # GBP
+    weight: 2
+
+  - type: year_min
+    yearMin: 1990
+    weight: 1
+
+  - type: location_contains
+    locationPattern: "yorkshire"
+    weight: 1
+
+# Sites to scan. Seeded into the database on first startup.
+# Feature 003 takes over site management when integrated.
+sites:
+  - name: "Afors"
+    url: "https://afors.uk/light-aircraft/for-sale?page=1"
+    enabled: true
+
+  - name: "Trade-A-Plane"
+    url: "https://www.trade-a-plane.com/search?category_level1=Single+Engine+Piston&s-type=aircraft&s-lvl=1"
+    enabled: false
+
+  - name: "Controller"
+    url: "https://www.controller.com/listings/aircraft/for-sale/list/category/single-engine-piston-aircraft"
+    enabled: false

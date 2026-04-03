@@ -58,16 +58,20 @@ function runMigrations(db: Database.Database): void {
 }
 
 function seedSitesFromConfig(db: Database.Database, config: Config): void {
-  const { n } = db.prepare('SELECT COUNT(*) as n FROM sites').get() as { n: number };
-  if (n > 0) return;
-
-  const insert = db.prepare(
-    'INSERT INTO sites (id, name, url, enabled, priority, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-  );
-  const insertAll = db.transaction((sites: Config['sites']) => {
+  // Upsert on name: update url/enabled if the site already exists, insert if new.
+  // This means config.yml changes take effect on next startup without deleting the DB.
+  const upsert = db.prepare(`
+    INSERT INTO sites (id, name, url, enabled, priority, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT (name) DO UPDATE SET
+      url     = excluded.url,
+      enabled = excluded.enabled,
+      priority = excluded.priority
+  `);
+  const upsertAll = db.transaction((sites: Config['sites']) => {
     sites.forEach((site, i) => {
-      insert.run(randomUUID(), site.name, site.url, site.enabled ? 1 : 0, i, new Date().toISOString());
+      upsert.run(randomUUID(), site.name, site.url, site.enabled ? 1 : 0, i, new Date().toISOString());
     });
   });
-  insertAll(config.sites);
+  upsertAll(config.sites);
 }
