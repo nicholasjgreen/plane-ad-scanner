@@ -5,6 +5,17 @@
 **Status**: Draft
 **Input**: User description: "site list maintenance and discovery. Some of this has been added into feature 001, but can be moved into this feature. There must be a way to add known site as well as being able to discover new ones by automated searching. Admin users must be able to disable sites. When a site is disabled we ignore all listing from it, and do not re-add it when auto scanning. For each site we add we need to verify that we can successfully pull the listings from the site. This could mean navigating through web pages meant for humans."
 
+## Clarifications
+
+### Session 2026-04-03
+
+- Q: What mechanism handles sites requiring interactive browsing during verification? → A: Extend existing LLM scraper agent with multi-turn tool use (fetch, follow redirects/pagination); no headless browser.
+- Q: What UI interaction model for the admin page? → A: Server-rendered HTML forms (GET/POST), consistent with feature 001; no client-side JS.
+- Q: When a previously healthy site starts failing scans, is it auto-disabled or left for admin action? → A: Record failure in last scan outcome; surface in site list; admin decides whether to disable or re-verify.
+- Q: How is automated discovery triggered — on a schedule or manually? → A: Manual only; admin triggers discovery from the admin page; no automatic schedule.
+
+---
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Manually Add a Known Site (Priority: P1)
@@ -53,7 +64,7 @@ As an admin, I want the system to verify that a newly added site can actually re
 
 1. **Given** a site has been added, **When** verification runs, **Then** the system attempts to extract a sample of listings from the site.
 2. **Given** verification produces at least one listing, **When** the result is available, **Then** the sample is shown to me so I can confirm data quality before the site is fully enabled.
-3. **Given** the site requires interactive browsing to display listings, **When** verification runs, **Then** the process still attempts to extract listings and does not immediately fail.
+3. **Given** the site requires following links or pagination to display listings, **When** verification runs, **Then** the LLM scraper agent uses multi-turn tool calls to follow them and does not immediately fail.
 4. **Given** I review a verification sample and reject it, **When** I reject, **Then** the site is set to "verification failed" and not included in scans.
 5. **Given** I want to re-verify a previously failed site, **When** I trigger re-verification, **Then** the process runs again from scratch.
 
@@ -65,7 +76,7 @@ As an admin, I want the system to periodically search for aircraft-for-sale webs
 
 **Why this priority**: Automated discovery adds ongoing value but the tool is functional without it; manual addition covers the immediate need.
 
-**Independent Test**: Can be tested by running the discovery process in isolation and confirming it produces candidate URLs not already in the site list, each with a name and brief description for evaluation.
+**Independent Test**: Can be tested by triggering discovery from the admin page and confirming it produces candidate URLs not already in the site list, each with a name and brief description for evaluation.
 
 **Acceptance Scenarios**:
 
@@ -94,7 +105,7 @@ As an admin, I want to see all configured sites in one view with their status, l
 
 ### Edge Cases
 
-- What happens if a site changes its structure after verification and listings can no longer be extracted — is it automatically flagged on the next failed scan?
+- If a site changes its structure and listings can no longer be extracted, the failure is recorded in the site's last scan outcome and surfaced in the site list; the site is not auto-disabled. The admin reviews the failure and decides whether to disable or re-verify.
 - What if the same site is reachable under multiple URLs (e.g., `www.` and non-`www.`)? How are URL duplicates detected?
 - What if auto-discovery returns a large number of candidates at once? Is there a cap on proposals per run?
 - What if verification is triggered but the site is temporarily unavailable — is it retried or immediately marked failed?
@@ -106,7 +117,7 @@ As an admin, I want to see all configured sites in one view with their status, l
 
 - **FR-001**: The system MUST allow an admin to add a site by providing a URL and display name.
 - **FR-002**: The system MUST automatically trigger listing verification when a new site is added.
-- **FR-003**: Verification MUST attempt to extract a representative sample of listings from the site, including sites that require interactive browsing to display content.
+- **FR-003**: Verification MUST attempt to extract a representative sample of listings from the site using the existing LLM scraper agent with multi-turn tool use (fetch, follow redirects/pagination); no headless browser dependency is introduced.
 - **FR-004**: The extracted verification sample MUST be presented to the admin for review before the site is marked as enabled.
 - **FR-005**: The admin MUST be able to approve or reject a verification sample; approval transitions the site to "enabled", rejection marks it "verification failed".
 - **FR-006**: The admin MUST be able to re-trigger verification for any site in "verification failed" or "enabled" state.
@@ -114,7 +125,7 @@ As an admin, I want to see all configured sites in one view with their status, l
 - **FR-008**: A disabled site MUST NOT be scanned and MUST NOT have its listing data updated in future runs.
 - **FR-009**: A disabled site's URL MUST NOT be re-added or re-enabled by the automated discovery process under any circumstances.
 - **FR-010**: The system MUST reject duplicate URLs; adding a URL already present in the site list (in any status) MUST be prevented.
-- **FR-011**: The system MUST periodically run an automated discovery process to find candidate aircraft-for-sale websites not already in the site list.
+- **FR-011**: The admin MUST be able to manually trigger a discovery run from the admin page; the discovery process finds candidate aircraft-for-sale websites not already in the site list. No automatic schedule is used.
 - **FR-012**: Each discovery candidate MUST be presented to the admin with at minimum a URL, a suggested name, and a brief description before any action is taken.
 - **FR-013**: The admin MUST be able to approve or dismiss each discovery candidate; dismissed candidates MUST be permanently suppressed from future proposals.
 - **FR-014**: The system MUST provide a site list view showing all configured sites with name, URL, status, listing count, and last scan/verification outcome.
@@ -135,7 +146,7 @@ As an admin, I want to see all configured sites in one view with their status, l
 - **SC-002**: When a site is disabled, no listings from that site appear in any subsequent scan output.
 - **SC-003**: A disabled site's URL is never re-proposed or re-enabled by automated discovery under any circumstances.
 - **SC-004**: Verification successfully identifies at least one extractable listing for 80% of publicly accessible aircraft-for-sale sites submitted.
-- **SC-005**: The automated discovery process surfaces at least one previously unknown candidate site per month of unattended operation.
+- **SC-005**: A manually triggered discovery run surfaces at least one previously unknown candidate site not already in the site list.
 - **SC-006**: All site management actions (add, disable, re-verify, approve/dismiss candidate) complete and are reflected in the site list within one interaction cycle.
 
 ## Assumptions
@@ -146,6 +157,6 @@ As an admin, I want to see all configured sites in one view with their status, l
 - The minimum sample size for a passing verification is one extractable listing; a larger sample improves confidence but is not required.
 - Sites that require authentication to view listings cannot be verified and will remain in "verification failed" indefinitely in v1; this is acceptable.
 - Listings already stored from a site that is subsequently disabled are retained and remain visible in the listing view; this feature does not purge historical listing data.
-- The automated discovery process runs on a configurable schedule; the default cadence is an implementation choice.
+- The discovery process is triggered manually by the admin from the admin page; there is no automatic discovery schedule.
 - Priority ordering is a simple integer rank; drag-and-drop reordering UI is out of scope for v1.
-- All admin actions (add site, disable, re-verify, approve/dismiss discovery candidates, set priority order) are performed via a dedicated admin/config web page served alongside the main listing page. The main listing page (feature 001) remains read-only; the admin page is a separate route.
+- All admin actions (add site, disable, re-verify, approve/dismiss discovery candidates, set priority order) are performed via a dedicated admin page at `/admin` served alongside the main listing page. The admin page uses server-rendered HTML forms (GET/POST) with full-page reloads, consistent with feature 001. The main listing page remains read-only; no client-side JavaScript is introduced.
