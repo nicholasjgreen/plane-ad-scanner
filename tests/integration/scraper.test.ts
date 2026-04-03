@@ -41,7 +41,7 @@ function mockExtractor(html: string, _siteUrl: string): Promise<RawListing[]> {
       registration: 'N12345A',
       year: 1998,
       price: 48000,
-      priceCurrency: 'USD',
+      priceCurrency: 'GBP',
       location: 'Leeds Bradford Airport',
       attributes: {},
     },
@@ -100,7 +100,9 @@ describe('runScraper with static HTML fixture', () => {
     );
     const piper = output.listings.find((l) => l.registration === 'N12345A');
     expect(piper).toBeDefined();
-    expect(piper?.priceCurrency).toBe('USD');
+    expect(piper?.make).toBe('Piper');
+    // Currency is derived from the listing page price, not the registration
+    expect(piper?.priceCurrency).toBe('GBP');
   });
 
   it('handles listings with no registration (treats as unique)', async () => {

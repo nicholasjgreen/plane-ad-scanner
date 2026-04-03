@@ -114,6 +114,27 @@ describe('one site fails', () => {
     expect(summary[0].error).toBe('HTTP 500');
   });
 
+  it('records sites_failed count correctly in scan_runs DB row', async () => {
+    seedSite(db, 'BadSite', 'https://bad.com');
+    seedSite(db, 'GoodSite', 'https://good.com');
+
+    const scraper = vi
+      .fn()
+      .mockResolvedValueOnce({ siteName: 'BadSite', listings: [], error: 'timeout' } as ScraperOutput)
+      .mockResolvedValueOnce({ siteName: 'GoodSite', listings: [makeListing('https://good.com/1')] } as ScraperOutput);
+    const historian = vi.fn().mockResolvedValue({ newCount: 1, updatedCount: 0, listingIds: [] } as HistorianResult);
+    const matcher = vi.fn().mockResolvedValue({ scores: [] } as MatcherOutput);
+
+    await runScan(db, minimalConfig, { scraper, historian, matcher });
+
+    const row = db
+      .prepare('SELECT sites_attempted, sites_succeeded, sites_failed FROM scan_runs ORDER BY started_at DESC LIMIT 1')
+      .get() as { sites_attempted: number; sites_succeeded: number; sites_failed: number };
+    expect(row.sites_attempted).toBe(2);
+    expect(row.sites_succeeded).toBe(1);
+    expect(row.sites_failed).toBe(1);
+  });
+
   it('does not call historian for failed sites', async () => {
     seedSite(db, 'BadSite', 'https://bad.com');
 

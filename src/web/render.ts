@@ -30,11 +30,18 @@ export interface ScanError {
   error: string;
 }
 
+export interface ActiveFilters {
+  type: string | null;
+  maxPrice: number | null;
+  newOnly: boolean;
+}
+
 export interface ListingsPageData {
   listings: ListingRow[];
   lastScan: LastScanInfo | null;
   scanErrors: ScanError[];
   totalCount: number;
+  filters: ActiveFilters;
 }
 
 function esc(s: string | null | undefined): string {
@@ -95,6 +102,30 @@ function renderListing(l: ListingRow): string {
     </article>`;
 }
 
+function renderFilterBar(filters: ActiveFilters): string {
+  const typeVal = esc(filters.type);
+  const maxPriceVal = filters.maxPrice !== null ? String(filters.maxPrice) : '';
+  const newChecked = filters.newOnly ? ' checked' : '';
+  const hasFilters = filters.type || filters.maxPrice !== null || filters.newOnly;
+  return `
+  <form class="filter-bar" method="get" action="/">
+    <label class="filter-bar__field">
+      <span>Type</span>
+      <input type="text" name="type" value="${typeVal}" placeholder="e.g. cessna">
+    </label>
+    <label class="filter-bar__field">
+      <span>Max price</span>
+      <input type="number" name="max_price" value="${maxPriceVal}" placeholder="e.g. 80000" min="0">
+    </label>
+    <label class="filter-bar__field filter-bar__field--inline">
+      <input type="checkbox" name="new_only" value="1"${newChecked}>
+      <span>New only</span>
+    </label>
+    <button type="submit">Filter</button>
+    ${hasFilters ? '<a class="filter-bar__clear" href="/">Clear filters</a>' : ''}
+  </form>`;
+}
+
 function renderBody(data: ListingsPageData): string {
   const { listings, lastScan, totalCount } = data;
 
@@ -108,7 +139,7 @@ function renderBody(data: ListingsPageData): string {
 }
 
 export function renderListingsPage(data: ListingsPageData): string {
-  const { lastScan, scanErrors, totalCount } = data;
+  const { lastScan, scanErrors, totalCount, filters } = data;
   const scanMeta = lastScan
     ? `<p class="meta">Last scan: ${esc(lastScan.startedAt)} — ${lastScan.listingsFound} found, ${lastScan.listingsNew} new</p>`
     : '';
@@ -140,12 +171,20 @@ export function renderListingsPage(data: ListingsPageData): string {
     .badge { font-size: .7rem; font-weight: 700; padding: .15em .5em; border-radius: 3px; vertical-align: middle; margin-left: .4rem; text-transform: uppercase; }
     .badge--new { background: #0d6efd; color: white; }
     .empty { color: #666; font-style: italic; }
+    .filter-bar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: .75rem 1rem; margin-bottom: 1.5rem; }
+    .filter-bar__field { display: flex; flex-direction: column; gap: .2rem; font-size: .875rem; font-weight: 600; color: #555; }
+    .filter-bar__field--inline { flex-direction: row; align-items: center; gap: .4rem; }
+    .filter-bar input[type="text"], .filter-bar input[type="number"] { padding: .3rem .5rem; border: 1px solid #ced4da; border-radius: 4px; font-size: .875rem; }
+    .filter-bar button { padding: .35rem .9rem; background: #0d6efd; color: white; border: none; border-radius: 4px; font-size: .875rem; cursor: pointer; }
+    .filter-bar button:hover { background: #0b5ed7; }
+    .filter-bar__clear { font-size: .875rem; color: #6c757d; }
   </style>
 </head>
 <body>
   <h1>Plane Listings</h1>
   ${scanMeta}
   ${renderErrorBanner(scanErrors)}
+  ${renderFilterBar(filters)}
   <main>
     ${renderBody(data)}
   </main>

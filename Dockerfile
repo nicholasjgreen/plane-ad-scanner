@@ -7,7 +7,7 @@ COPY package*.json ./
 RUN npm ci
 
 # Copy source
-COPY tsconfig.json vitest.config.ts ./
+COPY tsconfig.json vitest.config.ts eslint.config.js .prettierrc ./
 COPY src/ ./src/
 COPY tests/ ./tests/
 

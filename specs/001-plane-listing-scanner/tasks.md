@@ -98,9 +98,9 @@
 
 **Independent Test**: Set `schedule: "* * * * *"` (every minute) in `config.yml`. Start `npm start`. Wait ~65 seconds. Refresh the page; verify `scan_runs` table has a new row and listings have been refreshed. Then set one site URL to an unreachable address; trigger a scan; verify the error banner appears on the page.
 
-- [ ] T024 [P] [US3] Implement `src/cli/scan.ts` — one-off scan entry point; load config, open DB, run Orchestrator once, log token usage and any errors, exit 0 on success (or partial success with errors) / exit 1 only on total failure; wire as `npm run scan` script in `package.json`
-- [ ] T025 [US3] Add cron scheduler to `src/web/server.ts` — when `config.schedule` is not null, register a `node-cron` job calling the Orchestrator; log each scheduled run start/end; wire `npm start` script (server + scheduler) and `npm run serve` script (server only, no scheduler) in `package.json`
-- [ ] T026 [P] [US3] Verify resilience path end-to-end: in `tests/unit/orchestration.test.ts`, add test confirming that when one Scraper returns `error` and others succeed, `scan_runs.error_summary` contains the failed site and `sites_failed` count is correct (update T012 mocked orchestration tests if needed)
+- [X] T024 [P] [US3] Implement `src/cli/scan.ts` — one-off scan entry point; load config, open DB, run Orchestrator once, log token usage and any errors, exit 0 on success (or partial success with errors) / exit 1 only on total failure; wire as `npm run scan` script in `package.json`
+- [X] T025 [US3] Add cron scheduler to `src/web/server.ts` — when `config.schedule` is not null, register a `node-cron` job calling the Orchestrator; log each scheduled run start/end; wire `npm start` script (server + scheduler) and `npm run serve` script (server only, no scheduler) in `package.json`
+- [X] T026 [P] [US3] Verify resilience path end-to-end: in `tests/unit/orchestration.test.ts`, add test confirming that when one Scraper returns `error` and others succeed, `scan_runs.error_summary` contains the failed site and `sites_failed` count is correct (update T012 mocked orchestration tests if needed)
 
 **Checkpoint**: US1–US3 complete — `npm start` runs perpetually, scans on schedule, page stays current.
 
@@ -112,8 +112,8 @@
 
 **Independent Test**: Seed DB with a Cessna 172 at £45,000 and a Piper PA-28 at £60,000. Open `/?type=cessna`; verify only the Cessna appears. Open `/?max_price=50000`; verify only the Cessna appears. Open `/` with no filters; verify both listings appear.
 
-- [ ] T027 [US4] Add query-param filtering to `GET /` in `src/web/server.ts` — accept optional `type` (substring, case-insensitive match against `aircraft_type`, `make`, `model`), `max_price` (numeric), and `new_only` (flag) query params; apply as additional SQL WHERE clauses before rendering
-- [ ] T028 [US4] Update `src/web/templates/listings.html` — add a filter bar with type text input, max-price input, and "New only" checkbox; form submits via GET; active filters are pre-populated from current query params; a "Clear filters" link resets to `/`
+- [X] T027 [US4] Add query-param filtering to `GET /` in `src/web/server.ts` — accept optional `type` (substring, case-insensitive match against `aircraft_type`, `make`, `model`), `max_price` (numeric), and `new_only` (flag) query params; apply as additional SQL WHERE clauses before rendering
+- [X] T028 [US4] Update `src/web/templates/listings.html` — add a filter bar with type text input, max-price input, and "New only" checkbox; form submits via GET; active filters are pre-populated from current query params; a "Clear filters" link resets to `/`
 
 **Checkpoint**: All 4 user stories complete and independently testable.
 
@@ -123,9 +123,9 @@
 
 **Purpose**: Final validation, cleanup, and config hardening.
 
-- [ ] T029 [P] Run all quickstart.md validation scenarios manually: (a) listings ranked by score, (b) "New" badge appears/clears across two scans, (c) unreachable site shows error banner, (d) empty state before first scan, (e) deduplication by registration — fix any gaps found
-- [ ] T030 [P] Run `npm test && npm run lint` — fix any remaining test failures or lint errors; ensure all TDD test files (scoring, dedup, orchestration) are green
-- [ ] T031 Finalise `config.yml.example` with realistic values (a Cessna 172 price range, a UK location pattern, two placeholder site URLs) and update `README` or quickstart.md if any setup steps have changed
+- [X] T029 [P] Run all quickstart.md validation scenarios manually: (a) listings ranked by score, (b) "New" badge appears/clears across two scans, (c) unreachable site shows error banner, (d) empty state before first scan, (e) deduplication by registration — fix any gaps found
+- [X] T030 [P] Run `npm test && npm run lint` — fix any remaining test failures or lint errors; ensure all TDD test files (scoring, dedup, orchestration) are green
+- [X] T031 Finalise `config.yml.example` with realistic values (a Cessna 172 price range, a UK location pattern, two placeholder site URLs) and update `README` or quickstart.md if any setup steps have changed
 
 ---
 

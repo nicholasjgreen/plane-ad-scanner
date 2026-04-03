@@ -1,10 +1,14 @@
 import express from 'express';
 import type { Application } from 'express';
 import http from 'node:http';
+import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
+import cron from 'node-cron';
 import { renderListingsPage } from './render.js';
-import type { ListingRow, LastScanInfo, ScanError, ListingsPageData } from './render.js';
-import { logger } from '../config.js';
+import type { ListingRow, LastScanInfo, ScanError, ListingsPageData, ActiveFilters } from './render.js';
+import { logger, loadConfig } from '../config.js';
+import { initDb } from '../db/index.js';
+import { runScan } from '../agents/orchestrator.js';
 
 interface DbListingRow {
   id: string;
@@ -111,7 +115,8 @@ export function createApp(db: Database.Database): Application {
       ? (JSON.parse(lastScanRow.error_summary) as ScanError[])
       : [];
 
-    const data: ListingsPageData = { listings, lastScan, scanErrors, totalCount };
+    const filters: ActiveFilters = { type: typeFilter, maxPrice: maxPrice !== null && !isNaN(maxPrice) ? maxPrice : null, newOnly };
+    const data: ListingsPageData = { listings, lastScan, scanErrors, totalCount, filters };
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(renderListingsPage(data));
   });
@@ -127,4 +132,31 @@ export function startServer(app: Application, port: number): http.Server {
   return app.listen(port, () => {
     logger.info({ port }, 'Web server listening');
   });
+}
+
+// ---------------------------------------------------------------------------
+// Entry point — only runs when this file is executed directly (npm start / npm run serve)
+// ---------------------------------------------------------------------------
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const config = loadConfig();
+  const db = initDb(config);
+  const app = createApp(db);
+  startServer(app, config.web.port);
+
+  const serveOnly = process.env.SERVE_ONLY === 'true';
+
+  if (!serveOnly && config.schedule) {
+    if (!cron.validate(config.schedule)) {
+      logger.error({ schedule: config.schedule }, 'Invalid cron expression — scheduler disabled');
+    } else {
+      cron.schedule(config.schedule, () => {
+        logger.info({ schedule: config.schedule }, 'Scheduled scan starting');
+        runScan(db, config)
+          .then((result) => logger.info(result, 'Scheduled scan complete'))
+          .catch((err) => logger.error({ err }, 'Scheduled scan failed'));
+      });
+      logger.info({ schedule: config.schedule }, 'Cron scheduler registered');
+    }
+  }
 }
