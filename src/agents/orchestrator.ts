@@ -137,7 +137,7 @@ export async function runScan(
     allListingIds.push(...hist.listingIds);
   }
 
-  // Matcher — Phase 3 stub returns empty scores (scores remain 0)
+  // Score all listings via Matcher; on failure, retain existing DB scores
   if (allListingIds.length > 0) {
     try {
       const rows = allListingIds

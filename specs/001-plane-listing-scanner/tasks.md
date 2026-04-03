@@ -80,13 +80,13 @@
 
 ### TDD — Scoring Engine (write tests FIRST, confirm they FAIL, then implement)
 
-- [ ] T020 [US2] [TDD] Write failing unit tests for scoring engine in `tests/unit/scoring.test.ts` covering: (a) all 6 criterion types satisfied → 100; (b) partial matches → correct weighted fraction; (c) null price/year → criterion not satisfied, no crash; (d) empty criteria → score 0 for all; (e) `price_range` with `min > max` edge case; (f) `type_match` is case-insensitive across `aircraftType`, `make`, and `model`
+- [X] T020 [US2] [TDD] Write failing unit tests for scoring engine in `tests/unit/scoring.test.ts` covering: (a) all 6 criterion types satisfied → 100; (b) partial matches → correct weighted fraction; (c) null price/year → criterion not satisfied, no crash; (d) empty criteria → score 0 for all; (e) `price_range` with `min > max` edge case; (f) `type_match` is case-insensitive across `aircraftType`, `make`, and `model`
 
 ### Implementation — Scoring Service and Matcher
 
-- [ ] T021 [US2] Implement `src/services/scoring.ts` — pure function `scoreListing(listing: ListingForScoring, criteria: ScoringCriteria[]): number`; implement all criterion satisfaction rules from `contracts/matcher-agent.md`; return 0–100 rounded to 1 decimal; make all T020 tests pass
-- [ ] T022 [US2] Implement `src/agents/matcher.ts` — Anthropic SDK agent (Sonnet model, max 3 turns, no tools); calls `src/services/scoring.ts` for each listing; returns `MatcherOutput`; on exception, log error and return empty scores (Orchestrator retains existing DB scores)
-- [ ] T023 [US2] Wire Matcher into `src/agents/orchestrator.ts` — replace the stub Matcher call (T015) with the real `MatcherAgent`; after Historian step, call `MatcherAgent({ listings: deduplicatedListings, criteria: config.criteria })`; validate `MatcherOutput` schema; UPDATE `listings.match_score` for each returned score; update T012 orchestration tests to cover Matcher call
+- [X] T021 [US2] Implement `src/services/scoring.ts` — pure function `scoreListing(listing: ListingForScoring, criteria: ScoringCriteria[]): number`; implement all criterion satisfaction rules from `contracts/matcher-agent.md`; return 0–100 rounded to 1 decimal; make all T020 tests pass
+- [X] T022 [US2] Implement `src/agents/matcher.ts` — Anthropic SDK agent (Sonnet model, max 3 turns, no tools); calls `src/services/scoring.ts` for each listing; returns `MatcherOutput`; on exception, log error and return empty scores (Orchestrator retains existing DB scores)
+- [X] T023 [US2] Wire Matcher into `src/agents/orchestrator.ts` — replace the stub Matcher call (T015) with the real `MatcherAgent`; after Historian step, call `MatcherAgent({ listings: deduplicatedListings, criteria: config.criteria })`; validate `MatcherOutput` schema; UPDATE `listings.match_score` for each returned score; update T012 orchestration tests to cover Matcher call
 
 **Checkpoint**: US1 + US2 working — listings are now ranked by config-driven criteria scores.
 

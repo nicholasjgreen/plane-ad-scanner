@@ -129,6 +129,33 @@ describe('one site fails', () => {
   });
 });
 
+describe('matcher scores written to DB', () => {
+  it('updates match_score for each listing returned by matcher', async () => {
+    seedSite(db, 'SiteA', 'https://site-a.com');
+    const listingId = randomUUID();
+    db.prepare(
+      `INSERT INTO listings (id, listing_url, source_site, match_score, is_new, date_first_found, date_last_seen, raw_attributes)
+       VALUES (?, 'https://site-a.com/1', 'SiteA', 0, 0, ?, ?, '{}')`
+    ).run(listingId, NOW, NOW);
+
+    const scraper = vi.fn().mockResolvedValue({ siteName: 'SiteA', listings: [] } as ScraperOutput);
+    const historian = vi
+      .fn()
+      .mockResolvedValue({ newCount: 0, updatedCount: 1, listingIds: [listingId] } as HistorianResult);
+    const matcher = vi
+      .fn()
+      .mockResolvedValue({ scores: [{ listingId, score: 85.0 }] } as MatcherOutput);
+
+    await runScan(db, minimalConfig, { scraper, historian, matcher });
+
+    expect(matcher).toHaveBeenCalledOnce();
+    const { match_score } = db
+      .prepare('SELECT match_score FROM listings WHERE id = ?')
+      .get(listingId) as { match_score: number };
+    expect(match_score).toBe(85.0);
+  });
+});
+
 describe('matcher throws', () => {
   it('retains existing scores and still completes the scan', async () => {
     seedSite(db, 'SiteA', 'https://site-a.com');
