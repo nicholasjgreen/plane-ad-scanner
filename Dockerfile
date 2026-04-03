@@ -9,6 +9,7 @@ RUN npm ci
 # Copy source
 COPY tsconfig.json vitest.config.ts ./
 COPY src/ ./src/
+COPY tests/ ./tests/
 
 # Runtime data directory
 RUN mkdir -p data
