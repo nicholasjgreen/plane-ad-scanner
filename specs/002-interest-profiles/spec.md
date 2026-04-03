@@ -219,8 +219,10 @@ referencing those specific feedback entries.
 
 - **FR-014**: The primary output of each scan run MUST be a ranked list of listings sorted
   descending by overall interest level.
-- **FR-015**: The ranked list MUST include for each listing: overall interest level, per-profile
-  scores, and evidence (matched/unmatched criteria with contributions and any inference notes).
+- **FR-015**: The system MUST persist for each listing: overall interest level, per-profile scores,
+  and structured evidence (matched/unmatched criteria with contributions and any inference notes).
+  This data is displayed in the expanded view of the web page (feature 004) after the plain-English
+  explanation — not as a standalone CLI output.
 - **FR-016**: Listings with an overall interest level below a configurable minimum threshold MUST
   be excluded from the ranked list.
 - **FR-017**: When no listings clear the threshold, the output MUST explicitly state this rather

@@ -1,19 +1,21 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.0 → 1.1.0 (MINOR: two new agent principles added; stack materially amended)
+Version change: 1.1.0 → 1.2.0 (MINOR: Notifier agent removed; output model changed from push
+notifications to web page; requireApproval human-in-the-loop section updated accordingly)
 Modified principles:
-  - I. Simplicity First — amended to acknowledge intentional agent complexity
-  - Technology Stack — Anthropic Agent SDK and model choice added
-Added sections/principles:
-  - VI. Agent Architecture (new)
-  - VII. Agent Controls (new)
+  - VI. Agent Architecture — Notifier removed from mandatory roles table
+  - VII. Agent Controls — Notifier-specific permission rule removed; requireApproval section
+    updated to reflect web-page output model
 Removed sections: none
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ aligned (Constitution Check covers new principles)
-  - .specify/templates/spec-template.md ✅ aligned (no changes needed)
-  - .specify/templates/tasks-template.md ✅ aligned (agent phases fit existing phase model)
+  - .specify/templates/plan-template.md ✅ no changes needed (Constitution Check is generic)
+  - .specify/templates/spec-template.md ✅ no changes needed
+  - .specify/templates/tasks-template.md ✅ no changes needed
 Deferred TODOs: none
+Context: Feature 001 was changed from push-alert output to a ranked web page. The Notifier
+agent had no remaining role and was removed. The Presenter agent (feature 004) is the new
+downstream consumer of matched listings.
 -->
 
 # plane-ad-scanner Constitution
@@ -93,9 +95,9 @@ agent has a single responsibility, a restricted tool set, and clearly defined in
 |-------|---------------|-----------------|
 | Orchestrator | Coordinates a full scan run; delegates to and aggregates results from all other agents | State read, spawn sub-agents |
 | Scraper (per site) | Fetches and parses raw listings from one aircraft-for-sale website | HTTP GET only |
-| Matcher | Evaluates a batch of raw listings against the user's criteria; returns matched listings | None (pure logic) |
-| Notifier | Formats and dispatches a notification for matched listings | Notification channel write only |
+| Matcher | Evaluates a batch of raw listings against the user's interest profiles; scores listings and produces ranked output | None (pure logic) |
 | Historian | Reads/writes the seen-listings store; deduplicates incoming listings | State read/write only |
+| Presenter | Generates AI headlines and plain-English interest explanations for listings; stores results for web display | None (pure generation) |
 
 - Agents MUST run concurrently where independent (e.g., all Scraper agents launch in parallel).
 - Agent outputs MUST be schema-validated before being passed to downstream agents.
@@ -121,20 +123,20 @@ escalation:
 - Each agent MUST only be granted the tools listed for its role in Principle VI. No agent
   receives a superset tool set "just in case".
 - No agent may write to the configuration file or environment.
-- The Notifier agent MUST only send notifications; it MUST NOT read or write persistent state.
 - The Historian agent MUST NOT make network requests.
+- The Presenter agent MUST NOT read or write persistent state directly; it receives listing data as input and returns generated content as output only.
 
 **Human-in-the-loop:**
 - A configurable `requireApproval` mode MUST be supported: when enabled, the Orchestrator
-  presents matched listings to the user for confirmation before invoking the Notifier.
+  pauses after the Matcher completes and presents the matched listings for user confirmation
+  before proceeding with Presenter generation and persistence.
 - `requireApproval` defaults to `false` for scheduled/unattended runs and `true` for
   manual/debug runs.
 
 **Output safety:**
 - All agent outputs MUST be treated as untrusted until schema-validated.
 - Agent outputs MUST NOT be interpolated into shell commands or rendered as raw HTML.
-- Listing URLs extracted by Scraper agents MUST be validated as http/https before inclusion
-  in notifications.
+- Listing URLs extracted by Scraper agents MUST be validated as http/https before persistence.
 
 ## Technology Stack
 
@@ -174,4 +176,4 @@ Deviations from this stack MUST be justified in the Complexity Tracking table.
 - The constitution is the canonical runtime guidance document for AI-assisted development
   sessions.
 
-**Version**: 1.1.0 | **Ratified**: 2026-03-29 | **Last Amended**: 2026-03-29
+**Version**: 1.2.0 | **Ratified**: 2026-03-29 | **Last Amended**: 2026-03-30
