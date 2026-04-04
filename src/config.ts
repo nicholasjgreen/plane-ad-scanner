@@ -71,7 +71,8 @@ const ConfigSchema = z
     ollama: z
       .object({
         url: z.string().url().default('http://localhost:11434'),
-        verification_model: z.string().min(1),
+        verification_model: z.string().min(1).optional(),
+        scraper_model: z.string().min(1).optional(),
       })
       .nullable()
       .default(null),

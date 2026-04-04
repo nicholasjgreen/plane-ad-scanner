@@ -15,9 +15,10 @@ web:
 # Comment out or set to null to use Anthropic (claude-haiku) for verification.
 #
 # ollama:
-#   url: "http://host.docker.internal:11434"   # Mac/Windows
-#   url: "http://localhost:11434"               # running outside Docker
-#   verification_model: "qwen2.5:7b"
+#   url: "http://host.docker.internal:11434"   # Mac/Windows (Docker)
+#   # url: "http://localhost:11434"            # outside Docker
+#   verification_model: "qwen2.5:7b"   # used for site verification
+#   scraper_model: "qwen2.5:7b"        # used for listing extraction (defaults to verification_model if omitted)
 
 agent:
   token_budget_per_run: 50000   # Max tokens across all agents in one scan run

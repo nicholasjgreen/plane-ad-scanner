@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { resetIsNew, runHistorian } from './historian.js';
 import { runScraper } from './scraper.js';
+import { runScraperOllama } from './scraper-ollama.js';
 import { runMatcher } from './matcher.js';
+import OpenAI from 'openai';
 import type {
   ScraperOutput,
   RawListing,
@@ -24,6 +26,8 @@ export interface OrchestratorDeps {
     scanStartedAt: string
   ) => Promise<HistorianResult>;
   matcher?: (listings: ListingForScoring[], criteria: Criterion[]) => Promise<MatcherOutput>;
+  ollamaClient?: OpenAI;
+  ollamaScraperModel?: string;
 }
 
 // Validate raw listings from the scraper before passing to the Historian.
@@ -95,8 +99,9 @@ export async function runScan(
 
   const scraperFn =
     deps.scraper ??
-    ((site) =>
-      runScraper(site, anthropic, { maxTokensPerAgent: tokenBudgetPerSite }));
+    (deps.ollamaClient && deps.ollamaScraperModel
+      ? (site) => runScraperOllama(site, deps.ollamaClient!, deps.ollamaScraperModel!)
+      : (site) => runScraper(site, anthropic, { maxTokensPerAgent: tokenBudgetPerSite }));
 
   const historianFn =
     deps.historian ??

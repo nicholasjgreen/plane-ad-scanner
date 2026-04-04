@@ -161,13 +161,19 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   const serveOnly = process.env.SERVE_ONLY === 'true';
 
+  const ollamaScraperModel =
+    config.ollama?.scraper_model ?? config.ollama?.verification_model;
+  const scanDeps = ollamaClient && ollamaScraperModel
+    ? { ollamaClient, ollamaScraperModel }
+    : {};
+
   if (!serveOnly && config.schedule) {
     if (!cron.validate(config.schedule)) {
       logger.error({ schedule: config.schedule }, 'Invalid cron expression — scheduler disabled');
     } else {
       cron.schedule(config.schedule, () => {
         logger.info({ schedule: config.schedule }, 'Scheduled scan starting');
-        runScan(db, config)
+        runScan(db, config, scanDeps)
           .then((result) => logger.info(result, 'Scheduled scan complete'))
           .catch((err) => logger.error({ err }, 'Scheduled scan failed'));
       });
