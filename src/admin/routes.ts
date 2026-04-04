@@ -1,0 +1,353 @@
+// Admin Express router — handles all /admin/* routes.
+// All POST routes use PRG (Post/Redirect/Get) pattern — no HTML rendered from POST.
+
+import { Router } from 'express';
+import type { Response } from 'express';
+import { randomUUID } from 'node:crypto';
+import type Database from 'better-sqlite3';
+import { applyTransition, canTransition } from '../services/siteStatus.js';
+import type { SiteStatus } from '../services/siteStatus.js';
+import { renderAdminPage } from './render.js';
+import type { AdminSite, AdminCandidate } from './render.js';
+import { logger } from '../config.js';
+
+export function createAdminRouter(db: Database.Database): Router {
+  const router = Router();
+
+  // -------------------------------------------------------------------------
+  // GET /admin — render site list
+  // -------------------------------------------------------------------------
+
+  router.get('/', (req, res) => {
+    const siteRows = db
+      .prepare(
+        `SELECT id, name, url, status, priority, total_listings, last_scan_outcome, last_verified
+         FROM sites ORDER BY
+           CASE status WHEN 'enabled' THEN 0 WHEN 'pending' THEN 1 WHEN 'disabled' THEN 2 ELSE 3 END,
+           priority ASC, name ASC`
+      )
+      .all() as Array<{
+      id: string;
+      name: string;
+      url: string;
+      status: string;
+      priority: number;
+      total_listings: number;
+      last_scan_outcome: string | null;
+      last_verified: string | null;
+    }>;
+
+    const sites: AdminSite[] = siteRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      url: r.url,
+      status: r.status as AdminSite['status'],
+      priority: r.priority,
+      totalListings: r.total_listings,
+      lastScanOutcome: r.last_scan_outcome,
+      lastVerified: r.last_verified,
+    }));
+
+    const candidateRows = db
+      .prepare(
+        `SELECT id, url, name, description FROM discovery_candidates
+         WHERE status = 'pending_review' ORDER BY discovered_at DESC`
+      )
+      .all() as Array<{
+      id: string;
+      url: string;
+      name: string;
+      description: string | null;
+    }>;
+
+    const candidates: AdminCandidate[] = candidateRows.map((r) => ({
+      id: r.id,
+      url: r.url,
+      name: r.name,
+      description: r.description,
+    }));
+
+    const msg = typeof req.query.msg === 'string' ? req.query.msg : undefined;
+    const type = req.query.type === 'error' ? 'error' : 'success';
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(
+      renderAdminPage({
+        sites,
+        candidates,
+        flash: msg ? { msg, type } : null,
+      })
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /admin/sites — add a site
+  // -------------------------------------------------------------------------
+
+  router.post('/sites', (req, res) => {
+    const name = (req.body?.name as string | undefined)?.trim() ?? '';
+    const url = (req.body?.url as string | undefined)?.trim() ?? '';
+
+    if (!name) {
+      res.redirect('/admin?msg=Name+required&type=error');
+      return;
+    }
+    if (!url.match(/^https?:\/\//)) {
+      res.redirect('/admin?msg=Invalid+URL&type=error');
+      return;
+    }
+
+    const existing = db.prepare('SELECT id FROM sites WHERE url = ?').get(url);
+    if (existing) {
+      res.redirect('/admin?msg=URL+already+exists&type=error');
+      return;
+    }
+
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO sites (id, name, url, enabled, status, priority, created_at)
+       VALUES (?, ?, ?, 0, 'pending', 0, ?)`
+    ).run(id, name, url, now);
+
+    logger.info({ siteId: id, name, url }, 'Site added via admin');
+    res.redirect('/admin?msg=Site+added&type=success');
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /admin/sites/:id/disable
+  // -------------------------------------------------------------------------
+
+  router.post('/sites/:id/disable', (req, res) => {
+    const site = db
+      .prepare('SELECT id, status FROM sites WHERE id = ?')
+      .get(req.params.id) as { id: string; status: string } | undefined;
+
+    if (!site) {
+      res.redirect('/admin?msg=Site+not+found&type=error');
+      return;
+    }
+
+    try {
+      applyTransition(site.status as SiteStatus, 'disable');
+      db.prepare("UPDATE sites SET status = 'disabled' WHERE id = ?").run(site.id);
+      logger.info({ siteId: site.id }, 'Site disabled via admin');
+      res.redirect('/admin?msg=Site+disabled&type=success');
+    } catch {
+      res.redirect('/admin?msg=Cannot+disable+site&type=error');
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /admin/sites/:id/enable
+  // -------------------------------------------------------------------------
+
+  router.post('/sites/:id/enable', (req, res) => {
+    const site = db
+      .prepare('SELECT id, status FROM sites WHERE id = ?')
+      .get(req.params.id) as { id: string; status: string } | undefined;
+
+    if (!site) {
+      res.redirect('/admin?msg=Site+not+found&type=error');
+      return;
+    }
+
+    if (!canTransition(site.status as SiteStatus, 'enable')) {
+      res.redirect('/admin?msg=Cannot+enable+site+from+current+status&type=error');
+      return;
+    }
+
+    db.prepare("UPDATE sites SET status = 'enabled' WHERE id = ?").run(site.id);
+    logger.info({ siteId: site.id }, 'Site enabled via admin');
+    res.redirect('/admin?msg=Site+enabled&type=success');
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /admin/sites/:id/verify — trigger/re-trigger verification
+  // -------------------------------------------------------------------------
+
+  router.post('/sites/:id/verify', (req, res) => {
+    const site = db
+      .prepare('SELECT id, name, url, status FROM sites WHERE id = ?')
+      .get(req.params.id) as { id: string; name: string; url: string; status: string } | undefined;
+
+    if (!site) {
+      res.redirect('/admin?msg=Site+not+found&type=error');
+      return;
+    }
+
+    if (!canTransition(site.status as SiteStatus, 'trigger_verify')) {
+      res.redirect('/admin?msg=Cannot+verify+site+from+current+status&type=error');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const vrId = randomUUID();
+    db.prepare("UPDATE sites SET status = 'pending' WHERE id = ?").run(site.id);
+    db.prepare(
+      `INSERT INTO verification_results (id, site_id, attempted_at) VALUES (?, ?, ?)`
+    ).run(vrId, site.id, now);
+
+    // Fire-and-forget verification (implemented in T011)
+    logger.info({ siteId: site.id, vrId }, 'Verification triggered via admin');
+    res.redirect('/admin?msg=Verification+started&type=success');
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /admin/sites/:id/verify/approve
+  // -------------------------------------------------------------------------
+
+  router.post('/sites/:id/verify/approve', (req, res) => {
+    const site = db
+      .prepare('SELECT id, status FROM sites WHERE id = ?')
+      .get(req.params.id) as { id: string; status: string } | undefined;
+
+    if (!site) {
+      res.redirect('/admin?msg=Site+not+found&type=error');
+      return;
+    }
+
+    try {
+      applyTransition(site.status as SiteStatus, 'approve_verification');
+    } catch {
+      res.redirect('/admin?msg=Cannot+approve+verification&type=error');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    db.prepare(
+      `UPDATE verification_results SET passed = 1, completed_at = ?
+       WHERE site_id = ? AND passed IS NULL
+       ORDER BY attempted_at DESC LIMIT 1`
+    ).run(now, site.id);
+    db.prepare(
+      `UPDATE sites SET status = 'enabled', last_verified = ? WHERE id = ?`
+    ).run(now, site.id);
+
+    logger.info({ siteId: site.id }, 'Verification approved via admin');
+    res.redirect('/admin?msg=Site+enabled&type=success');
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /admin/sites/:id/verify/reject
+  // -------------------------------------------------------------------------
+
+  router.post('/sites/:id/verify/reject', (req, res) => {
+    const site = db
+      .prepare('SELECT id, status FROM sites WHERE id = ?')
+      .get(req.params.id) as { id: string; status: string } | undefined;
+
+    if (!site) {
+      res.redirect('/admin?msg=Site+not+found&type=error');
+      return;
+    }
+
+    try {
+      applyTransition(site.status as SiteStatus, 'reject_verification');
+    } catch {
+      res.redirect('/admin?msg=Cannot+reject+verification&type=error');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    db.prepare(
+      `UPDATE verification_results SET passed = 0, completed_at = ?, failure_reason = 'Rejected by admin'
+       WHERE site_id = ? AND passed IS NULL
+       ORDER BY attempted_at DESC LIMIT 1`
+    ).run(now, site.id);
+    db.prepare(
+      `UPDATE sites SET status = 'verification_failed' WHERE id = ?`
+    ).run(site.id);
+
+    logger.info({ siteId: site.id }, 'Verification rejected via admin');
+    res.redirect('/admin?msg=Site+verification+failed&type=success');
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /admin/sites/:id/priority
+  // -------------------------------------------------------------------------
+
+  router.post('/sites/:id/priority', (req, res) => {
+    const site = db
+      .prepare('SELECT id FROM sites WHERE id = ?')
+      .get(req.params.id) as { id: string } | undefined;
+
+    if (!site) {
+      res.redirect('/admin?msg=Site+not+found&type=error');
+      return;
+    }
+
+    const rawPriority = req.body?.priority as string | undefined;
+    const priority = rawPriority !== undefined ? parseInt(rawPriority, 10) : NaN;
+    if (isNaN(priority) || priority < 0) {
+      res.redirect('/admin?msg=Invalid+priority&type=error');
+      return;
+    }
+
+    db.prepare('UPDATE sites SET priority = ? WHERE id = ?').run(priority, site.id);
+    res.redirect('/admin?msg=Priority+updated&type=success');
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /admin/discovery/run
+  // -------------------------------------------------------------------------
+
+  router.post('/discovery/run', (_req, res) => {
+    logger.info('Discovery run triggered via admin');
+    // Fire-and-forget (implemented in T019)
+    res.redirect('/admin?msg=Discovery+running&type=success');
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /admin/discovery/candidates/:id/approve
+  // -------------------------------------------------------------------------
+
+  router.post('/discovery/candidates/:id/approve', (req, res) => {
+    const candidate = db
+      .prepare('SELECT id, url, name FROM discovery_candidates WHERE id = ?')
+      .get(req.params.id) as { id: string; url: string; name: string } | undefined;
+
+    if (!candidate) {
+      res.redirect('/admin?msg=Candidate+not+found&type=error');
+      return;
+    }
+
+    const existing = db.prepare('SELECT id FROM sites WHERE url = ?').get(candidate.url);
+    if (existing) {
+      res.redirect('/admin?msg=Already+exists&type=error');
+      return;
+    }
+
+    const siteId = randomUUID();
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO sites (id, name, url, enabled, status, priority, created_at)
+       VALUES (?, ?, ?, 0, 'pending', 0, ?)`
+    ).run(siteId, candidate.name, candidate.url, now);
+    db.prepare("UPDATE discovery_candidates SET status = 'approved' WHERE id = ?").run(candidate.id);
+
+    logger.info({ candidateId: candidate.id, siteId }, 'Discovery candidate approved via admin');
+    res.redirect('/admin?msg=Candidate+approved&type=success');
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /admin/discovery/candidates/:id/dismiss
+  // -------------------------------------------------------------------------
+
+  router.post('/discovery/candidates/:id/dismiss', (req, res) => {
+    const candidate = db
+      .prepare('SELECT id FROM discovery_candidates WHERE id = ?')
+      .get(req.params.id) as { id: string } | undefined;
+
+    if (!candidate) {
+      res.redirect('/admin?msg=Candidate+not+found&type=error');
+      return;
+    }
+
+    db.prepare("UPDATE discovery_candidates SET status = 'dismissed' WHERE id = ?").run(candidate.id);
+    logger.info({ candidateId: candidate.id }, 'Discovery candidate dismissed via admin');
+    res.redirect('/admin?msg=Candidate+dismissed&type=success');
+  });
+
+  return router;
+}

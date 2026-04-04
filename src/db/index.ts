@@ -2,8 +2,6 @@ import Database from 'better-sqlite3';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
-import type { Config } from '../config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, 'migrations');
@@ -17,14 +15,11 @@ export function getDb(): Database.Database {
   return _db;
 }
 
-export function initDb(config?: Config, dbPath?: string): Database.Database {
+export function initDb(dbPath?: string): Database.Database {
   _db = new Database(dbPath ?? DEFAULT_DB_PATH);
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');
   runMigrations(_db);
-  if (config) {
-    seedSitesFromConfig(_db, config);
-  }
   return _db;
 }
 
@@ -57,21 +52,3 @@ function runMigrations(db: Database.Database): void {
   }
 }
 
-function seedSitesFromConfig(db: Database.Database, config: Config): void {
-  // Upsert on name: update url/enabled if the site already exists, insert if new.
-  // This means config.yml changes take effect on next startup without deleting the DB.
-  const upsert = db.prepare(`
-    INSERT INTO sites (id, name, url, enabled, priority, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT (name) DO UPDATE SET
-      url     = excluded.url,
-      enabled = excluded.enabled,
-      priority = excluded.priority
-  `);
-  const upsertAll = db.transaction((sites: Config['sites']) => {
-    sites.forEach((site, i) => {
-      upsert.run(randomUUID(), site.name, site.url, site.enabled ? 1 : 0, i, new Date().toISOString());
-    });
-  });
-  upsertAll(config.sites);
-}

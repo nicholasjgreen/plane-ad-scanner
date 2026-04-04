@@ -9,6 +9,7 @@ import type { ListingRow, LastScanInfo, ScanError, ListingsPageData, ActiveFilte
 import { logger, loadConfig } from '../config.js';
 import { initDb } from '../db/index.js';
 import { runScan } from '../agents/orchestrator.js';
+import { createAdminRouter } from '../admin/routes.js';
 
 interface DbListingRow {
   id: string;
@@ -57,6 +58,8 @@ function toListingRow(r: DbListingRow): ListingRow {
 
 export function createApp(db: Database.Database): Application {
   const app = express();
+  app.use(express.urlencoded({ extended: false }));
+  app.use('/admin', createAdminRouter(db));
 
   app.get('/', (req, res) => {
     const typeFilter = typeof req.query.type === 'string' ? req.query.type.trim() : null;
@@ -140,7 +143,7 @@ export function startServer(app: Application, port: number): http.Server {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const config = loadConfig();
-  const db = initDb(config);
+  const db = initDb();
   const app = createApp(db);
   startServer(app, config.web.port);
 

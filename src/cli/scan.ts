@@ -4,7 +4,7 @@ import { initDb } from '../db/index.js';
 import { runScan } from '../agents/orchestrator.js';
 
 const config = loadConfig();
-const db = initDb(config);
+const db = initDb();
 
 logger.info('Starting one-off scan...');
 runScan(db, config)

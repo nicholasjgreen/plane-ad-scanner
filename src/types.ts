@@ -61,3 +61,21 @@ export interface HistorianResult {
   updatedCount: number;
   listingIds: string[];
 }
+
+export interface VerifierOutput {
+  siteName: string;
+  sampleListings: RawListing[];
+  canFetchListings: boolean;
+  failureReason?: string;
+  turnsUsed: number;
+}
+
+export interface DiscoveryCandidate {
+  url: string;
+  name: string;
+  description: string;
+}
+
+export interface DiscovererOutput {
+  candidates: DiscoveryCandidate[];
+}

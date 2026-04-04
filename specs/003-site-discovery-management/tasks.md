@@ -19,8 +19,8 @@
 
 **Purpose**: Create new directories and shared types needed before any user story work begins.
 
-- [ ] T001 Add `VerifierOutput`, `DiscovererOutput`, and `DiscoveryCandidate` types to `src/types.ts` (extend existing file — do not create new one)
-- [ ] T002 [P] Create directory structure: `src/admin/` for routes and render; `src/agents/verifier.ts` and `src/agents/discoverer.ts` placeholders (empty exports); `tests/integration/admin.test.ts` placeholder
+- [x] T001 Add `VerifierOutput`, `DiscovererOutput`, and `DiscoveryCandidate` types to `src/types.ts` (extend existing file — do not create new one)
+- [x] T002 [P] Create directory structure: `src/admin/` for routes and render; `src/agents/verifier.ts` and `src/agents/discoverer.ts` placeholders (empty exports); `tests/integration/admin.test.ts` placeholder
 
 ---
 
@@ -28,10 +28,10 @@
 
 **Purpose**: DB schema migration and site status service — all user stories depend on these. No user story work can begin until this phase is complete.
 
-- [ ] T003 Write `src/db/migrations/002-site-management.sql` — ALTER `sites` to add `status TEXT NOT NULL DEFAULT 'enabled' CHECK(...)`, `last_scan_outcome TEXT`, `total_listings INTEGER NOT NULL DEFAULT 0`; CREATE `verification_results` table; CREATE `discovery_candidates` table; CREATE `sync_enabled_on_insert` and `sync_enabled_on_update` triggers; all indexes — per `data-model.md`
-- [ ] T004 [TDD] Write failing unit tests for the site status state machine in `tests/unit/siteStatus.test.ts` covering: all 14 valid transitions from `contracts/site-status-service.md`; all invalid transitions throw `InvalidTransitionError`; `canTransition` returns correct boolean for all combinations; `disable` valid from every non-disabled status
-- [ ] T005 Implement `src/services/siteStatus.ts` — `SiteStatus` type, `SiteAction` type, `InvalidTransitionError` class, `applyTransition(current, action)` pure function, `canTransition(current, action)` pure function — make all T004 tests pass
-- [ ] T006 Update `src/db/index.ts` — remove `seedSitesFromConfig` function (superseded by admin UI in this feature); migration runner will now apply `002-site-management.sql` automatically on startup
+- [x] T003 Write `src/db/migrations/002-site-management.sql` — ALTER `sites` to add `status TEXT NOT NULL DEFAULT 'enabled' CHECK(...)`, `last_scan_outcome TEXT`, `total_listings INTEGER NOT NULL DEFAULT 0`; CREATE `verification_results` table; CREATE `discovery_candidates` table; CREATE `sync_enabled_on_insert` and `sync_enabled_on_update` triggers; all indexes — per `data-model.md`
+- [x] T004 [TDD] Write failing unit tests for the site status state machine in `tests/unit/siteStatus.test.ts` covering: all 14 valid transitions from `contracts/site-status-service.md`; all invalid transitions throw `InvalidTransitionError`; `canTransition` returns correct boolean for all combinations; `disable` valid from every non-disabled status
+- [x] T005 Implement `src/services/siteStatus.ts` — `SiteStatus` type, `SiteAction` type, `InvalidTransitionError` class, `applyTransition(current, action)` pure function, `canTransition(current, action)` pure function — make all T004 tests pass
+- [x] T006 Update `src/db/index.ts` — remove `seedSitesFromConfig` function (superseded by admin UI in this feature); migration runner will now apply `002-site-management.sql` automatically on startup
 
 **Checkpoint**: Migration applied, state machine tested and green, DB singleton clean — user story implementation can now begin.
 
@@ -47,13 +47,13 @@ These two stories share the same admin page and route handler; implementing them
 
 ### TDD — Admin Route Integration Tests
 
-- [ ] T007 [TDD] Write failing integration tests for admin routes in `tests/integration/admin.test.ts` covering: `GET /admin` renders site list with status badges; `POST /admin/sites` adds site with `status='pending'` and redirects; `POST /admin/sites` rejects duplicate URL; `POST /admin/sites` rejects invalid URL; `POST /admin/sites/:id/disable` sets status to `disabled`; `POST /admin/sites/:id/enable` sets status to `enabled`
+- [x] T007 [TDD] Write failing integration tests for admin routes in `tests/integration/admin.test.ts` covering: `GET /admin` renders site list with status badges; `POST /admin/sites` adds site with `status='pending'` and redirects; `POST /admin/sites` rejects duplicate URL; `POST /admin/sites` rejects invalid URL; `POST /admin/sites/:id/disable` sets status to `disabled`; `POST /admin/sites/:id/enable` sets status to `enabled`
 
 ### Implementation
 
-- [ ] T008 [US1] [US2] Create `src/admin/render.ts` — `renderAdminPage(data: AdminPageData): string` using template literals (same pattern as `src/web/render.ts`); implement: site list table with name/URL/status badge/priority/total-listings/last-scan-outcome/last-verified columns; status badge CSS classes (`badge--pending`, `badge--enabled`, `badge--disabled`, `badge--failed`); action buttons per status per `contracts/admin-routes.md` action matrix; "Add site" inline form; "Run Discovery" button; discovery candidates section (hidden when empty); flash message banner; CSS in `<style>` block; `interface AdminPageData` exported from the same file
-- [ ] T009 [US1] [US2] Create `src/admin/routes.ts` — Express Router; `GET /admin` handler: query all sites ordered by status then priority, query pending candidates, render `renderAdminPage`; `POST /admin/sites` handler: validate name (non-empty) and URL (`^https?://`), check duplicate, INSERT site with `status='pending'`, trigger verification async (fire-and-forget), redirect with flash; `POST /admin/sites/:id/disable` and `POST /admin/sites/:id/enable` handlers using `applyTransition` from `siteStatus.ts`; flash message via query string `?msg=...&type=success|error`
-- [ ] T010 [US1] [US2] Mount admin router in `src/web/server.ts` — add `import { adminRouter } from '../admin/routes.js'` and `app.use('/admin', adminRouter)` after existing routes; make T007 integration tests pass
+- [x] T008 [US1] [US2] Create `src/admin/render.ts` — `renderAdminPage(data: AdminPageData): string` using template literals (same pattern as `src/web/render.ts`); implement: site list table with name/URL/status badge/priority/total-listings/last-scan-outcome/last-verified columns; status badge CSS classes (`badge--pending`, `badge--enabled`, `badge--disabled`, `badge--failed`); action buttons per status per `contracts/admin-routes.md` action matrix; "Add site" inline form; "Run Discovery" button; discovery candidates section (hidden when empty); flash message banner; CSS in `<style>` block; `interface AdminPageData` exported from the same file
+- [x] T009 [US1] [US2] Create `src/admin/routes.ts` — Express Router; `GET /admin` handler: query all sites ordered by status then priority, query pending candidates, render `renderAdminPage`; `POST /admin/sites` handler: validate name (non-empty) and URL (`^https?://`), check duplicate, INSERT site with `status='pending'`, trigger verification async (fire-and-forget), redirect with flash; `POST /admin/sites/:id/disable` and `POST /admin/sites/:id/enable` handlers using `applyTransition` from `siteStatus.ts`; flash message via query string `?msg=...&type=success|error`
+- [x] T010 [US1] [US2] Mount admin router in `src/web/server.ts` — add `import { createAdminRouter } from '../admin/routes.js'` and `app.use('/admin', createAdminRouter(db))` after existing routes; make T007 integration tests pass
 
 **Checkpoint**: US1+US2 complete — `GET /admin` shows site list; `POST /admin/sites` adds site; disable/enable actions work.
 
