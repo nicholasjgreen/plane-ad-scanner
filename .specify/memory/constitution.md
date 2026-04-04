@@ -1,21 +1,21 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.1.0 → 1.2.0 (MINOR: Notifier agent removed; output model changed from push
-notifications to web page; requireApproval human-in-the-loop section updated accordingly)
-Modified principles:
-  - VI. Agent Architecture — Notifier removed from mandatory roles table
-  - VII. Agent Controls — Notifier-specific permission rule removed; requireApproval section
-    updated to reflect web-page output model
+Version change: 1.2.0 → 1.3.0 (MINOR: new Principle VIII added — Living Documentation)
+Modified principles: none
+Added sections:
+  - Principle VIII. Living Documentation (new)
 Removed sections: none
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ no changes needed (Constitution Check is generic)
   - .specify/templates/spec-template.md ✅ no changes needed
-  - .specify/templates/tasks-template.md ✅ no changes needed
+  - .specify/templates/tasks-template.md ✅ no changes needed (quickstart.md already tracked)
+  - README.md ✅ updated with setup/run instructions per Principle VIII
 Deferred TODOs: none
-Context: Feature 001 was changed from push-alert output to a ranked web page. The Notifier
-agent had no remaining role and was removed. The Presenter agent (feature 004) is the new
-downstream consumer of matched listings.
+Context: User requested explicit governance around keeping documentation current, specifically
+that the README must always contain enough operational context to run the tool. Principle VIII
+formalises this and ties it to the speckit workflow (quickstart.md is the per-feature source
+of truth; README is the project-level entry point that must stay non-trivial at all times).
 -->
 
 # plane-ad-scanner Constitution
@@ -124,7 +124,8 @@ escalation:
   receives a superset tool set "just in case".
 - No agent may write to the configuration file or environment.
 - The Historian agent MUST NOT make network requests.
-- The Presenter agent MUST NOT read or write persistent state directly; it receives listing data as input and returns generated content as output only.
+- The Presenter agent MUST NOT read or write persistent state directly; it receives listing
+  data as input and returns generated content as output only.
 
 **Human-in-the-loop:**
 - A configurable `requireApproval` mode MUST be supported: when enabled, the Orchestrator
@@ -137,6 +138,31 @@ escalation:
 - All agent outputs MUST be treated as untrusted until schema-validated.
 - Agent outputs MUST NOT be interpolated into shell commands or rendered as raw HTML.
 - Listing URLs extracted by Scraper agents MUST be validated as http/https before persistence.
+
+### VIII. Living Documentation
+
+Documentation MUST be kept current as a first-class deliverable, not deferred to the end of
+a feature or release cycle. Documentation that is wrong is worse than no documentation.
+
+**README — project entry point:**
+- `README.md` MUST contain enough information for someone (or a future AI session) to set up
+  and run the tool from scratch: prerequisites, environment setup, how to start the server,
+  how to run a one-off scan, and how to run the tests.
+- The README MUST be updated whenever a new feature changes a prerequisite, a startup command,
+  or a URL/port.
+- A minimal README is acceptable; a stale README is not.
+
+**quickstart.md — per-feature operational guide:**
+- Each feature MUST produce a `quickstart.md` as part of the planning phase (speckit.plan).
+- `quickstart.md` is the authoritative source of truth for operating the specific feature:
+  validation scenarios, workflow steps, and npm scripts.
+- It MUST be updated if implementation diverges from the plan (e.g., a command changes).
+
+**In-progress updates:**
+- During active implementation (speckit.implement), the README and quickstart.md MUST be
+  updated before the feature is considered complete — not as a separate cleanup task.
+- Principle VIII compliance MUST be verified in the Constitution Check section of each
+  plan.md (alongside Principles I–VII).
 
 ## Technology Stack
 
@@ -157,8 +183,9 @@ Deviations from this stack MUST be justified in the Complexity Tracking table.
 - Work is spec-driven: spec → plan → tasks → implement (speckit workflow).
 - Each user story is independently implementable and independently testable.
 - Commit after each completed task or logical group.
-- The quickstart.md (produced during planning) is the single source of truth for running the
-  tool.
+- The quickstart.md (produced during planning) is the single source of truth for running a
+  specific feature; the README is the project-level entry point — both MUST be kept current
+  (see Principle VIII).
 - Do not introduce a dependency without first checking whether the standard library or an
   existing dependency already covers the need.
 - Agent roles and tool sets MUST be documented in the implementation plan before any agent
@@ -170,10 +197,10 @@ Deviations from this stack MUST be justified in the Complexity Tracking table.
 - Amendments require: description of the change, version bump rationale, and update to this
   file.
 - All implementation plans MUST include a Constitution Check section that verifies compliance
-  with Principles I–VII before Phase 0 research begins and again after Phase 1 design.
+  with Principles I–VIII before Phase 0 research begins and again after Phase 1 design.
 - Complexity violations are permitted only when documented in the plan's Complexity Tracking
   table.
 - The constitution is the canonical runtime guidance document for AI-assisted development
   sessions.
 
-**Version**: 1.2.0 | **Ratified**: 2026-03-29 | **Last Amended**: 2026-03-30
+**Version**: 1.3.0 | **Ratified**: 2026-03-29 | **Last Amended**: 2026-04-04
