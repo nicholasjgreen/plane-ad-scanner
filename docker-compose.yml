@@ -13,6 +13,21 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     # Restart automatically unless manually stopped
     restart: unless-stopped
+    develop:
+      watch:
+        # Sync source files and restart (fast — no image rebuild needed, tsx runs TS directly)
+        - action: sync+restart
+          path: ./src
+          target: /app/src
+        # Restart when config changes (config is read at startup)
+        - action: sync+restart
+          path: ./config.yml
+          target: /app/config.yml
+        # Full rebuild only when dependencies change
+        - action: rebuild
+          path: package.json
+        - action: rebuild
+          path: package-lock.json
 
   # One-off scan (docker compose run scan)
   scan:

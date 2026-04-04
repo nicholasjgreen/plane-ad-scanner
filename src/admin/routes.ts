@@ -2,20 +2,73 @@
 // All POST routes use PRG (Post/Redirect/Get) pattern — no HTML rendered from POST.
 
 import { Router } from 'express';
-import type { Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
+import Anthropic from '@anthropic-ai/sdk';
 import { applyTransition, canTransition } from '../services/siteStatus.js';
 import type { SiteStatus } from '../services/siteStatus.js';
 import { renderAdminPage } from './render.js';
-import type { AdminSite, AdminCandidate } from './render.js';
+import type { AdminSite, AdminCandidate, AdminVerificationResult } from './render.js';
+import { runVerifier } from '../agents/verifier.js';
 import { logger } from '../config.js';
 
-export function createAdminRouter(db: Database.Database): Router {
+export interface AdminRouterDeps {
+  anthropic?: Anthropic;
+  config?: { maxTokensPerAgent: number };
+}
+
+export function createAdminRouter(db: Database.Database, deps: AdminRouterDeps = {}): Router {
   const router = Router();
 
   // -------------------------------------------------------------------------
-  // GET /admin — render site list
+  // Shared: fire-and-forget verifier
+  // -------------------------------------------------------------------------
+
+  function triggerVerification(
+    site: { id: string; name: string; url: string },
+    vrId: string
+  ): void {
+    if (!deps.anthropic || !deps.config) return;
+
+    const anthropic = deps.anthropic;
+    const config = deps.config;
+
+    runVerifier(site, anthropic, config)
+      .then((result) => {
+        const now = new Date().toISOString();
+        db.prepare(
+          `UPDATE verification_results
+             SET listings_sample = ?, passed = ?, completed_at = ?, failure_reason = ?
+           WHERE id = ?`
+        ).run(
+          JSON.stringify(result.sampleListings),
+          result.canFetchListings ? 1 : 0,
+          now,
+          result.failureReason ?? null,
+          vrId
+        );
+        logger.info(
+          { siteId: site.id, vrId, canFetch: result.canFetchListings, turns: result.turnsUsed },
+          'Verification complete'
+        );
+      })
+      .catch((err: unknown) => {
+        const msg = (err as Error).message;
+        logger.error({ siteId: site.id, vrId, err: msg }, 'Verification threw unexpectedly');
+        try {
+          db.prepare(
+            `UPDATE verification_results
+               SET passed = 0, completed_at = ?, failure_reason = ?
+             WHERE id = ?`
+          ).run(new Date().toISOString(), msg, vrId);
+        } catch {
+          // ignore secondary DB error
+        }
+      });
+  }
+
+  // -------------------------------------------------------------------------
+  // GET /admin — render site list with latest verification results
   // -------------------------------------------------------------------------
 
   router.get('/', (req, res) => {
@@ -37,16 +90,49 @@ export function createAdminRouter(db: Database.Database): Router {
       last_verified: string | null;
     }>;
 
-    const sites: AdminSite[] = siteRows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      url: r.url,
-      status: r.status as AdminSite['status'],
-      priority: r.priority,
-      totalListings: r.total_listings,
-      lastScanOutcome: r.last_scan_outcome,
-      lastVerified: r.last_verified,
-    }));
+    // Latest verification result per site (one query, matched by Map)
+    const vrRows = db
+      .prepare(
+        `SELECT site_id, listings_sample, passed, failure_reason, attempted_at
+         FROM verification_results
+         WHERE attempted_at = (
+           SELECT MAX(vr2.attempted_at) FROM verification_results vr2
+           WHERE vr2.site_id = verification_results.site_id
+         )`
+      )
+      .all() as Array<{
+      site_id: string;
+      listings_sample: string | null;
+      passed: number | null;
+      failure_reason: string | null;
+      attempted_at: string;
+    }>;
+
+    const vrBySite = new Map(vrRows.map((r) => [r.site_id, r]));
+
+    const sites: AdminSite[] = siteRows.map((r) => {
+      const vr = vrBySite.get(r.id);
+      const verificationResult: AdminVerificationResult | null = vr
+        ? {
+            listingsSample: vr.listings_sample,
+            passed: vr.passed,
+            failureReason: vr.failure_reason,
+            attemptedAt: vr.attempted_at,
+          }
+        : null;
+
+      return {
+        id: r.id,
+        name: r.name,
+        url: r.url,
+        status: r.status as AdminSite['status'],
+        priority: r.priority,
+        totalListings: r.total_listings,
+        lastScanOutcome: r.last_scan_outcome,
+        lastVerified: r.last_verified,
+        verificationResult,
+      };
+    });
 
     const candidateRows = db
       .prepare(
@@ -81,7 +167,7 @@ export function createAdminRouter(db: Database.Database): Router {
   });
 
   // -------------------------------------------------------------------------
-  // POST /admin/sites — add a site
+  // POST /admin/sites — add a site (triggers verification async)
   // -------------------------------------------------------------------------
 
   router.post('/sites', (req, res) => {
@@ -104,13 +190,18 @@ export function createAdminRouter(db: Database.Database): Router {
     }
 
     const id = randomUUID();
+    const vrId = randomUUID();
     const now = new Date().toISOString();
     db.prepare(
       `INSERT INTO sites (id, name, url, enabled, status, priority, created_at)
        VALUES (?, ?, ?, 0, 'pending', 0, ?)`
     ).run(id, name, url, now);
+    db.prepare(
+      `INSERT INTO verification_results (id, site_id, attempted_at) VALUES (?, ?, ?)`
+    ).run(vrId, id, now);
 
-    logger.info({ siteId: id, name, url }, 'Site added via admin');
+    logger.info({ siteId: id, vrId, name, url }, 'Site added via admin, verification triggered');
+    triggerVerification({ id, name, url }, vrId);
     res.redirect('/admin?msg=Site+added&type=success');
   });
 
@@ -188,8 +279,8 @@ export function createAdminRouter(db: Database.Database): Router {
       `INSERT INTO verification_results (id, site_id, attempted_at) VALUES (?, ?, ?)`
     ).run(vrId, site.id, now);
 
-    // Fire-and-forget verification (implemented in T011)
     logger.info({ siteId: site.id, vrId }, 'Verification triggered via admin');
+    triggerVerification(site, vrId);
     res.redirect('/admin?msg=Verification+started&type=success');
   });
 
@@ -319,14 +410,19 @@ export function createAdminRouter(db: Database.Database): Router {
     }
 
     const siteId = randomUUID();
+    const vrId = randomUUID();
     const now = new Date().toISOString();
     db.prepare(
       `INSERT INTO sites (id, name, url, enabled, status, priority, created_at)
        VALUES (?, ?, ?, 0, 'pending', 0, ?)`
     ).run(siteId, candidate.name, candidate.url, now);
+    db.prepare(
+      `INSERT INTO verification_results (id, site_id, attempted_at) VALUES (?, ?, ?)`
+    ).run(vrId, siteId, now);
     db.prepare("UPDATE discovery_candidates SET status = 'approved' WHERE id = ?").run(candidate.id);
 
-    logger.info({ candidateId: candidate.id, siteId }, 'Discovery candidate approved via admin');
+    logger.info({ candidateId: candidate.id, siteId, vrId }, 'Discovery candidate approved, verification triggered');
+    triggerVerification({ id: siteId, name: candidate.name, url: candidate.url }, vrId);
     res.redirect('/admin?msg=Candidate+approved&type=success');
   });
 

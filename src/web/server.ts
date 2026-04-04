@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk';
 import express from 'express';
 import type { Application } from 'express';
 import http from 'node:http';
@@ -10,6 +11,7 @@ import { logger, loadConfig } from '../config.js';
 import { initDb } from '../db/index.js';
 import { runScan } from '../agents/orchestrator.js';
 import { createAdminRouter } from '../admin/routes.js';
+import type { AdminRouterDeps } from '../admin/routes.js';
 
 interface DbListingRow {
   id: string;
@@ -56,10 +58,10 @@ function toListingRow(r: DbListingRow): ListingRow {
   };
 }
 
-export function createApp(db: Database.Database): Application {
+export function createApp(db: Database.Database, adminDeps: AdminRouterDeps = {}): Application {
   const app = express();
   app.use(express.urlencoded({ extended: false }));
-  app.use('/admin', createAdminRouter(db));
+  app.use('/admin', createAdminRouter(db, adminDeps));
 
   app.get('/', (req, res) => {
     const typeFilter = typeof req.query.type === 'string' ? req.query.type.trim() : null;
@@ -144,7 +146,11 @@ export function startServer(app: Application, port: number): http.Server {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const config = loadConfig();
   const db = initDb();
-  const app = createApp(db);
+  const anthropic = new Anthropic();
+  const app = createApp(db, {
+    anthropic,
+    config: { maxTokensPerAgent: config.agent.token_budget_per_run },
+  });
   startServer(app, config.web.port);
 
   const serveOnly = process.env.SERVE_ONLY === 'true';

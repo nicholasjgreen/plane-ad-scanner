@@ -1,6 +1,13 @@
 // Server-rendered HTML template for the admin page.
 // Follows the same pattern as src/web/render.ts (template literals, no client-side JS).
 
+export interface AdminVerificationResult {
+  listingsSample: string | null; // JSON: RawListing[]
+  passed: number | null;         // 1 = passed, 0 = failed, null = in progress
+  failureReason: string | null;
+  attemptedAt: string;
+}
+
 export interface AdminSite {
   id: string;
   name: string;
@@ -10,6 +17,7 @@ export interface AdminSite {
   totalListings: number;
   lastScanOutcome: string | null; // JSON: { date, listingsFound, error? }
   lastVerified: string | null;
+  verificationResult?: AdminVerificationResult | null;
 }
 
 export interface AdminCandidate {
@@ -117,10 +125,49 @@ function priorityForm(site: AdminSite): string {
   </form>`;
 }
 
+function renderVerificationResult(site: AdminSite): string {
+  const vr = site.verificationResult;
+  if (!vr) return '';
+
+  if (vr.passed === null) {
+    // In progress
+    return `<div class="vr vr--progress">Verification in progress…</div>`;
+  }
+
+  if (vr.passed === 0) {
+    // Failed
+    return `<div class="vr vr--failed">Verification failed: ${esc(vr.failureReason)}</div>`;
+  }
+
+  // Passed — show sample count and approve/reject buttons
+  let sampleCount = 0;
+  try {
+    const samples = JSON.parse(vr.listingsSample ?? '[]') as unknown[];
+    sampleCount = samples.length;
+  } catch {
+    sampleCount = 0;
+  }
+
+  return `<div class="vr vr--ready">
+    Sample: ${sampleCount} listing${sampleCount !== 1 ? 's' : ''} extracted
+    (${fmtDate(vr.attemptedAt)})
+    <form method="post" action="/admin/sites/${esc(site.id)}/verify/approve" style="display:inline;margin-left:.5rem">
+      <button type="submit" class="btn btn--success btn--small">Approve</button>
+    </form>
+    <form method="post" action="/admin/sites/${esc(site.id)}/verify/reject" style="display:inline">
+      <button type="submit" class="btn btn--danger btn--small">Reject</button>
+    </form>
+  </div>`;
+}
+
 function renderSiteRow(site: AdminSite): string {
+  const vrHtml = site.status === 'pending' ? renderVerificationResult(site) : '';
   return `
     <tr>
-      <td><a href="${esc(site.url)}" target="_blank" rel="noopener">${esc(site.name)}</a></td>
+      <td>
+        <a href="${esc(site.url)}" target="_blank" rel="noopener">${esc(site.name)}</a>
+        ${vrHtml}
+      </td>
       <td>${statusBadge(site.status)}</td>
       <td>${priorityForm(site)}</td>
       <td>${site.totalListings}</td>
@@ -200,6 +247,10 @@ export function renderAdminPage(data: AdminPageData): string {
     .banner--success { background: #d1e7dd; color: #0a3622; }
     .banner--error   { background: #f8d7da; color: #58151c; }
     .text-error { color: #dc3545; }
+    .vr { margin-top: .35rem; font-size: .82rem; padding: .25rem .4rem; border-radius: .2rem; }
+    .vr--progress { background: #e9ecef; color: #495057; }
+    .vr--failed   { background: #f8d7da; color: #58151c; }
+    .vr--ready    { background: #d1e7dd; color: #0a3622; }
     .add-form { display: flex; gap: .5rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1.5rem; }
     .add-form input { padding: .35rem .5rem; border: 1px solid #ced4da; border-radius: .25rem; font-size: .9rem; }
     .add-form input[name="name"] { width: 180px; }
