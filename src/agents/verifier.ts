@@ -8,6 +8,32 @@ import { logger } from '../config.js';
 
 const MAX_TURNS = 15;
 const MAX_HTML_CHARS = 40_000;
+const MAX_RETRIES = 4;
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function createWithRetry(
+  anthropic: Anthropic,
+  params: Anthropic.MessageCreateParamsNonStreaming
+): Promise<Anthropic.Message> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await anthropic.messages.create(params);
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      if (status === 429 && attempt < MAX_RETRIES) {
+        const delay = Math.min(5000 * 2 ** attempt, 60_000); // 5s, 10s, 20s, 40s
+        logger.warn({ attempt, delay }, 'Verifier rate-limited; retrying');
+        await sleep(delay);
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw new Error('Unreachable');
+}
 
 export interface VerifierDeps {
   fetchHtml?: (url: string) => Promise<string>;
@@ -73,7 +99,7 @@ If you cannot extract any listings after following pagination, respond with:
 
   try {
     while (turnsUsed < MAX_TURNS) {
-      const response = await anthropic.messages.create({
+      const response = await createWithRetry(anthropic, {
         model: 'claude-haiku-4-5-20251001',
         max_tokens: Math.min(config.maxTokensPerAgent, 4096),
         system: systemPrompt,

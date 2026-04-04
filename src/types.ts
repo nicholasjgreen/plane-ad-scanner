@@ -76,6 +76,10 @@ export interface DiscoveryCandidate {
   description: string;
 }
 
+export interface DiscovererInput {
+  existingUrls: string[];
+}
+
 export interface DiscovererOutput {
   candidates: DiscoveryCandidate[];
 }

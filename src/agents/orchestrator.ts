@@ -82,8 +82,8 @@ export async function runScan(
   resetIsNew(db);
 
   const sites = db
-    .prepare('SELECT name, url FROM sites WHERE enabled = 1 ORDER BY priority ASC')
-    .all() as { name: string; url: string }[];
+    .prepare("SELECT id, name, url FROM sites WHERE status = 'enabled' ORDER BY priority ASC")
+    .all() as { id: string; name: string; url: string }[];
 
   logger.info({ scanId, sites: sites.length }, 'Scan started');
 
@@ -113,18 +113,37 @@ export async function runScan(
   let succeeded = 0;
   const allListingIds: string[] = [];
 
+  const updateSiteOutcome = (
+    siteName: string,
+    outcome: { date: string; listingsFound: number; error?: string }
+  ) => {
+    try {
+      db.prepare(
+        `UPDATE sites
+           SET last_scan_outcome = ?,
+               total_listings    = (SELECT COUNT(*) FROM listings WHERE source_site = ?)
+         WHERE name = ?`
+      ).run(JSON.stringify(outcome), siteName, siteName);
+    } catch (err) {
+      logger.warn({ site: siteName, err }, 'Failed to update site scan outcome');
+    }
+  };
+
   for (let i = 0; i < settled.length; i++) {
     const site = sites[i];
     const result = settled[i];
 
     if (result.status === 'rejected') {
-      errors.push({ site: site.name, error: String(result.reason) });
+      const errMsg = String(result.reason);
+      errors.push({ site: site.name, error: errMsg });
+      updateSiteOutcome(site.name, { date: startedAt, listingsFound: 0, error: errMsg });
       continue;
     }
 
     const output = result.value;
     if (output.error) {
       errors.push({ site: site.name, error: output.error });
+      updateSiteOutcome(site.name, { date: startedAt, listingsFound: 0, error: output.error });
       continue;
     }
 
@@ -135,6 +154,7 @@ export async function runScan(
     const hist = await historianFn(valid, site.name, startedAt);
     totalNew += hist.newCount;
     allListingIds.push(...hist.listingIds);
+    updateSiteOutcome(site.name, { date: startedAt, listingsFound: valid.length });
   }
 
   // Score all listings via Matcher; on failure, retain existing DB scores

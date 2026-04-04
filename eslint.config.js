@@ -20,6 +20,8 @@ export default [
         AbortSignal: 'readonly',
         URL: 'readonly',
         URLSearchParams: 'readonly',
+        Response: 'readonly',
+        setTimeout: 'readonly',
       },
     },
     plugins: {

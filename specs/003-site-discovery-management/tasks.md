@@ -65,10 +65,10 @@ These two stories share the same admin page and route handler; implementing them
 
 **Independent Test**: Seed a site with `status='pending'`. POST a mock verification result into `verification_results` (bypassing the agent). Visit `GET /admin` and confirm the sample listings are shown with Approve/Reject buttons. `POST /admin/sites/:id/verify/approve` → site status becomes `enabled`. `POST /admin/sites/:id/verify/reject` → site status becomes `verification_failed`.
 
-- [ ] T011 [US3] Implement `src/agents/verifier.ts` — `runVerifier(site, anthropic, config, deps?)` following the same pattern as `src/agents/scraper.ts`; haiku model; max 15 turns; HTTP GET tool; system prompt instructs to extract ≤5 sample listings and follow pagination if needed; returns `VerifierOutput`; on any exception returns `{ siteName, sampleListings: [], canFetchListings: false, failureReason: message, turnsUsed: 0 }`; `VerifierOutput` type defined in `src/types.ts` (T001)
-- [ ] T012 [US3] Add `POST /admin/sites/:id/verify`, `POST /admin/sites/:id/verify/approve`, and `POST /admin/sites/:id/verify/reject` route handlers to `src/admin/routes.ts` — trigger: sets status to `pending`, inserts `verification_results` row with `passed=NULL`, runs `runVerifier` async (writes result to `verification_results` on completion, updates `site.last_verified`), redirects; approve: calls `applyTransition('approve_verification')`, updates `site.status='enabled'` and `site.last_verified`; reject: calls `applyTransition('reject_verification')`, updates `site.status='verification_failed'`
-- [ ] T013 [US3] Update `src/admin/render.ts` — show latest `verification_results` row inline for each `pending` site: sample listing count, "Approve" and "Reject" buttons, timestamp; show "Verification in progress…" when `passed IS NULL`; show failure reason when `passed = 0`
-- [ ] T014 [US3] Add integration tests for verification review flow to `tests/integration/admin.test.ts` — seed site + verification_results row; `GET /admin` shows sample; `POST /admin/sites/:id/verify/approve` sets site status = `enabled`; `POST /admin/sites/:id/verify/reject` sets site status = `verification_failed`
+- [x] T011 [US3] Implement `src/agents/verifier.ts` — `runVerifier(site, anthropic, config, deps?)` following the same pattern as `src/agents/scraper.ts`; haiku model; max 15 turns; HTTP GET tool; system prompt instructs to extract ≤5 sample listings and follow pagination if needed; returns `VerifierOutput`; on any exception returns `{ siteName, sampleListings: [], canFetchListings: false, failureReason: message, turnsUsed: 0 }`; `VerifierOutput` type defined in `src/types.ts` (T001)
+- [x] T012 [US3] Add `POST /admin/sites/:id/verify`, `POST /admin/sites/:id/verify/approve`, and `POST /admin/sites/:id/verify/reject` route handlers to `src/admin/routes.ts` — trigger: sets status to `pending`, inserts `verification_results` row with `passed=NULL`, runs `runVerifier` async (writes result to `verification_results` on completion, updates `site.last_verified`), redirects; approve: calls `applyTransition('approve_verification')`, updates `site.status='enabled'` and `site.last_verified`; reject: calls `applyTransition('reject_verification')`, updates `site.status='verification_failed'`
+- [x] T013 [US3] Update `src/admin/render.ts` — show latest `verification_results` row inline for each `pending` site: sample listing count, "Approve" and "Reject" buttons, timestamp; show "Verification in progress…" when `passed IS NULL`; show failure reason when `passed = 0`
+- [x] T014 [US3] Add integration tests for verification review flow to `tests/integration/admin.test.ts` — seed site + verification_results row; `GET /admin` shows sample; `POST /admin/sites/:id/verify/approve` sets site status = `enabled`; `POST /admin/sites/:id/verify/reject` sets site status = `verification_failed`
 
 **Checkpoint**: US3 complete — verification flow end-to-end; admin can approve or reject samples.
 
@@ -80,9 +80,9 @@ These two stories share the same admin page and route handler; implementing them
 
 **Independent Test**: Seed sites in all four statuses plus pending discovery candidates. `GET /admin` should show each site with correct status badge, correct listing count (from `total_listings`), and last scan date. Pending candidates appear in a distinct section.
 
-- [ ] T015 [US5] [P] Update `src/agents/orchestrator.ts` — change `WHERE enabled = 1` to `WHERE status = 'enabled'` in the sites query; after each site scan, UPDATE `sites.last_scan_outcome = ?` (JSON `{date, listingsFound, error?}`) and UPDATE `sites.total_listings = (SELECT COUNT(*) FROM listings WHERE source_site = sites.name)` for each site attempted
-- [ ] T016 [US5] [P] Update `src/admin/render.ts` — ensure site list table shows `total_listings`, `last_scan_outcome` (parsed as `{date, listingsFound, error?}`), `last_verified` for every site; show `—` for null fields; last scan outcome error shown in red; all four status badges visually distinct (CSS already added in T008 — verify coverage)
-- [ ] T017 [US5] [P] Add integration test to `tests/integration/admin.test.ts` — seed sites in all 4 statuses; `GET /admin` HTML contains correct status badge text for each; listing counts visible; pending candidates section present only when candidates exist
+- [x] T015 [US5] [P] Update `src/agents/orchestrator.ts` — change `WHERE enabled = 1` to `WHERE status = 'enabled'` in the sites query; after each site scan, UPDATE `sites.last_scan_outcome = ?` (JSON `{date, listingsFound, error?}`) and UPDATE `sites.total_listings = (SELECT COUNT(*) FROM listings WHERE source_site = sites.name)` for each site attempted
+- [x] T016 [US5] [P] Update `src/admin/render.ts` — ensure site list table shows `total_listings`, `last_scan_outcome` (parsed as `{date, listingsFound, error?}`), `last_verified` for every site; show `—` for null fields; last scan outcome error shown in red; all four status badges visually distinct (CSS already added in T008 — verify coverage)
+- [x] T017 [US5] [P] Add integration test to `tests/integration/admin.test.ts` — seed sites in all 4 statuses; `GET /admin` HTML contains correct status badge text for each; listing counts visible; pending candidates section present only when candidates exist
 
 **Checkpoint**: US5 complete — admin has full observability of all sites and their health.
 
@@ -94,9 +94,9 @@ These two stories share the same admin page and route handler; implementing them
 
 **Independent Test**: Seed `discovery_candidates` with one `pending_review` and one `dismissed` candidate plus one existing site. Mock the Discoverer agent to return a new candidate and the dismissed candidate's URL. `POST /admin/discovery/run` → only the new candidate is inserted. Approve a candidate → site created with `status='pending'`. Dismiss a candidate → status set to `dismissed`. Re-run discovery → dismissed URL not inserted again.
 
-- [ ] T018 [US4] Implement `src/agents/discoverer.ts` — `runDiscoverer(input: DiscovererInput, anthropic, config, deps?)` using `claude-sonnet-4-6`; max 10 turns; `web_search_20250305` first-party tool; system prompt instructs agent to search for aircraft-for-sale marketplaces, exclude `existingUrls`, normalise URLs (`scheme://host` only), return JSON array of `{url, name, description}`; parse response; validate each candidate URL (`^https?://`); deduplicate; return `DiscovererOutput`; on error return `{ candidates: [] }`
-- [ ] T019 [US4] Add `POST /admin/discovery/run`, `POST /admin/discovery/candidates/:id/approve`, `POST /admin/discovery/candidates/:id/dismiss` route handlers to `src/admin/routes.ts` — run: query all known URLs (UNION of sites + discovery_candidates), run `runDiscoverer` async, INSERT candidates with `ON CONFLICT(url) DO NOTHING`, redirect; approve: set candidate `status='approved'`, INSERT site with `status='pending'`, trigger verification async, redirect; dismiss: set candidate `status='dismissed'`, redirect
-- [ ] T020 [US4] Add integration tests for discovery flow to `tests/integration/admin.test.ts` (mock Discoverer agent via deps injection) — run discovery inserts new candidates; existing site URL not re-inserted; dismissed candidate URL not re-inserted; approve candidate creates site with status `pending`; dismiss candidate sets status `dismissed`
+- [x] T018 [US4] Implement `src/agents/discoverer.ts` — `runDiscoverer(input: DiscovererInput, anthropic, config, deps?)` using `claude-sonnet-4-6`; max 10 turns; `web_search_20250305` first-party tool; system prompt instructs agent to search for aircraft-for-sale marketplaces, exclude `existingUrls`, normalise URLs (`scheme://host` only), return JSON array of `{url, name, description}`; parse response; validate each candidate URL (`^https?://`); deduplicate; return `DiscovererOutput`; on error return `{ candidates: [] }`
+- [x] T019 [US4] Add `POST /admin/discovery/run`, `POST /admin/discovery/candidates/:id/approve`, `POST /admin/discovery/candidates/:id/dismiss` route handlers to `src/admin/routes.ts` — run: query all known URLs (UNION of sites + discovery_candidates), run `runDiscoverer` async, INSERT candidates with `ON CONFLICT(url) DO NOTHING`, redirect; approve: set candidate `status='approved'`, INSERT site with `status='pending'`, trigger verification async, redirect; dismiss: set candidate `status='dismissed'`, redirect
+- [x] T020 [US4] Add integration tests for discovery flow to `tests/integration/admin.test.ts` (mock Discoverer agent via deps injection) — run discovery inserts new candidates; existing site URL not re-inserted; dismissed candidate URL not re-inserted; approve candidate creates site with status `pending`; dismiss candidate sets status `dismissed`
 
 **Checkpoint**: US4 complete — full discovery workflow functional.
 
@@ -108,8 +108,8 @@ These two stories share the same admin page and route handler; implementing them
 
 **Independent Test**: Set site A priority=1 and site B priority=2 via `POST /admin/sites/:id/priority`. Confirm `sites` table has correct values. Confirm `GET /admin/` shows sites ordered by priority. Confirm `orchestrator.ts` query returns sites in priority ASC order.
 
-- [ ] T021 [US1] Add `POST /admin/sites/:id/priority` route handler to `src/admin/routes.ts` — validate `priority` is a non-negative integer; UPDATE `sites.priority`; redirect with flash
-- [ ] T022 [US1] Update `src/admin/render.ts` — add priority number input field + "Set" button for `enabled` sites in site list; current priority value pre-populated in input
+- [x] T021 [US1] Add `POST /admin/sites/:id/priority` route handler to `src/admin/routes.ts` — validate `priority` is a non-negative integer; UPDATE `sites.priority`; redirect with flash
+- [x] T022 [US1] Update `src/admin/render.ts` — add priority number input field + "Set" button for `enabled` sites in site list; current priority value pre-populated in input
 
 **Checkpoint**: All user stories complete and independently testable.
 
@@ -119,9 +119,9 @@ These two stories share the same admin page and route handler; implementing them
 
 **Purpose**: Final validation, type-check, test run, and cleanup.
 
-- [ ] T023 [P] Run `npm test && npm run lint` inside Docker — fix any failures; ensure all existing feature 001 tests (52 tests) still pass alongside new tests; run `npm run build` (tsc --noEmit) to confirm no type errors
-- [ ] T024 [P] Smoke-test all quickstart.md validation scenarios manually using Docker: add site → verify → approve; disable site → scan → confirm no listings; dismiss candidate → run discovery → confirm not re-proposed; site list shows all four statuses correctly
-- [ ] T025 Update `config.yml.example` — add comment noting `sites:` array is deprecated when feature 003 is active; remove site entries or mark as legacy; update any relevant notes in `specs/003-site-discovery-management/quickstart.md` if setup steps changed during implementation
+- [x] T023 [P] Run `npm test && npm run lint` inside Docker — fix any failures; ensure all existing feature 001 tests (52 tests) still pass alongside new tests; run `npm run build` (tsc --noEmit) to confirm no type errors
+- [ ] T024 [P] Smoke-test all quickstart.md validation scenarios manually using Docker  ← manual: add site → verify → approve; disable site → scan → confirm no listings; dismiss candidate → run discovery → confirm not re-proposed; site list shows all four statuses correctly
+- [x] T025 Update `config.yml.example` — add comment noting `sites:` array is deprecated when feature 003 is active; remove site entries or mark as legacy; update any relevant notes in `specs/003-site-discovery-management/quickstart.md` if setup steps changed during implementation
 
 ---
 

@@ -36,13 +36,14 @@ criteria:
     locationPattern: "yorkshire"
     weight: 1
 
-# Sites to scan. Seeded into the database on first startup.
-# Feature 003 takes over site management when integrated.
-sites:
-  - name: "Trade-A-Plane"
-    url: "https://www.trade-a-plane.com/search?category=Single+Engine+Piston"
-    enabled: true
-
-  - name: "Controller"
-    url: "https://www.controller.com/listings/aircraft/for-sale/list/category/single-engine-piston-aircraft"
-    enabled: true
+# Sites to scan.
+# NOTE (feature 003): Sites are now managed via the admin UI at /admin.
+# Add sites through the browser — the scanner will verify each site before enabling it.
+# The 'sites:' array below is no longer used; it is kept here as documentation only.
+#
+# sites:
+#   - name: "Trade-A-Plane"
+#     url: "https://www.trade-a-plane.com/search?category=Single+Engine+Piston"
+#   - name: "Controller"
+#     url: "https://www.controller.com/listings/aircraft/for-sale/list/category/single-engine-piston-aircraft"
+sites: []

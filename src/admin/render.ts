@@ -100,6 +100,7 @@ function actionButtons(site: AdminSite): string {
 
   switch (site.status) {
     case 'pending':
+      buttons.push(btn('/verify', 'Re-verify'));
       buttons.push(btn('/disable', 'Disable'));
       break;
     case 'enabled':

@@ -10,19 +10,41 @@ import type { SiteStatus } from '../services/siteStatus.js';
 import { renderAdminPage } from './render.js';
 import type { AdminSite, AdminCandidate, AdminVerificationResult } from './render.js';
 import { runVerifier } from '../agents/verifier.js';
+import { runDiscoverer } from '../agents/discoverer.js';
+import type { DiscovererOutput } from '../types.js';
 import { logger } from '../config.js';
 
 export interface AdminRouterDeps {
   anthropic?: Anthropic;
   config?: { maxTokensPerAgent: number };
+  /** Injectable for testing — pre-bound discovery function */
+  runDiscovery?: (existingUrls: string[]) => Promise<DiscovererOutput>;
 }
 
 export function createAdminRouter(db: Database.Database, deps: AdminRouterDeps = {}): Router {
   const router = Router();
 
   // -------------------------------------------------------------------------
-  // Shared: fire-and-forget verifier
+  // Serialised verification queue — one site at a time to avoid rate limits.
   // -------------------------------------------------------------------------
+
+  type VerificationTask = () => Promise<void>;
+  const verificationQueue: VerificationTask[] = [];
+  let verificationRunning = false;
+
+  async function drainVerificationQueue(): Promise<void> {
+    if (verificationRunning) return;
+    verificationRunning = true;
+    while (verificationQueue.length > 0) {
+      const task = verificationQueue.shift()!;
+      await task();
+      if (verificationQueue.length > 0) {
+        // Brief pause between verifications to ease rate-limit pressure.
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    }
+    verificationRunning = false;
+  }
 
   function triggerVerification(
     site: { id: string; name: string; url: string },
@@ -33,8 +55,10 @@ export function createAdminRouter(db: Database.Database, deps: AdminRouterDeps =
     const anthropic = deps.anthropic;
     const config = deps.config;
 
-    runVerifier(site, anthropic, config)
-      .then((result) => {
+    const task: VerificationTask = async () => {
+      logger.info({ siteId: site.id, vrId, queue: verificationQueue.length }, 'Starting verification');
+      try {
+        const result = await runVerifier(site, anthropic, config);
         const now = new Date().toISOString();
         db.prepare(
           `UPDATE verification_results
@@ -51,8 +75,7 @@ export function createAdminRouter(db: Database.Database, deps: AdminRouterDeps =
           { siteId: site.id, vrId, canFetch: result.canFetchListings, turns: result.turnsUsed },
           'Verification complete'
         );
-      })
-      .catch((err: unknown) => {
+      } catch (err: unknown) {
         const msg = (err as Error).message;
         logger.error({ siteId: site.id, vrId, err: msg }, 'Verification threw unexpectedly');
         try {
@@ -64,7 +87,11 @@ export function createAdminRouter(db: Database.Database, deps: AdminRouterDeps =
         } catch {
           // ignore secondary DB error
         }
-      });
+      }
+    };
+
+    verificationQueue.push(task);
+    void drainVerificationQueue();
   }
 
   // -------------------------------------------------------------------------
@@ -385,7 +412,45 @@ export function createAdminRouter(db: Database.Database, deps: AdminRouterDeps =
 
   router.post('/discovery/run', (_req, res) => {
     logger.info('Discovery run triggered via admin');
-    // Fire-and-forget (implemented in T019)
+
+    // Collect all known URLs to pass to the discoverer for exclusion
+    const existingUrls = [
+      ...(
+        db.prepare('SELECT url FROM sites').all() as { url: string }[]
+      ).map((r) => r.url),
+      ...(
+        db.prepare('SELECT url FROM discovery_candidates').all() as { url: string }[]
+      ).map((r) => r.url),
+    ];
+
+    // Resolve the discovery function: injected dep (tests) or real discoverer
+    const discoveryFn: ((existingUrls: string[]) => Promise<DiscovererOutput>) | null =
+      deps.runDiscovery ??
+      (deps.anthropic && deps.config
+        ? (urls) => runDiscoverer({ existingUrls: urls }, deps.anthropic!, deps.config!)
+        : null);
+
+    if (discoveryFn) {
+      discoveryFn(existingUrls)
+        .then((result) => {
+          const now = new Date().toISOString();
+          const insert = db.prepare(
+            `INSERT INTO discovery_candidates (id, url, name, description, discovered_at, status)
+             VALUES (?, ?, ?, ?, ?, 'pending_review')
+             ON CONFLICT(url) DO NOTHING`
+          );
+          db.transaction(() => {
+            for (const c of result.candidates) {
+              insert.run(randomUUID(), c.url, c.name, c.description, now);
+            }
+          })();
+          logger.info({ inserted: result.candidates.length }, 'Discovery run complete');
+        })
+        .catch((err: unknown) => {
+          logger.error({ err: (err as Error).message }, 'Discovery run failed');
+        });
+    }
+
     res.redirect('/admin?msg=Discovery+running&type=success');
   });
 
