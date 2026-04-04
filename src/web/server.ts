@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import express from 'express';
 import type { Application } from 'express';
 import http from 'node:http';
@@ -147,9 +148,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const config = loadConfig();
   const db = initDb();
   const anthropic = new Anthropic();
+  const ollamaClient = config.ollama
+    ? new OpenAI({ baseURL: `${config.ollama.url}/v1`, apiKey: 'ollama' })
+    : undefined;
   const app = createApp(db, {
     anthropic,
     config: { maxTokensPerAgent: config.agent.token_budget_per_run },
+    ollamaClient,
+    ollamaModel: config.ollama?.verification_model,
   });
   startServer(app, config.web.port);
 

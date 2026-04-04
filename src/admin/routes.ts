@@ -10,13 +10,18 @@ import type { SiteStatus } from '../services/siteStatus.js';
 import { renderAdminPage } from './render.js';
 import type { AdminSite, AdminCandidate, AdminVerificationResult } from './render.js';
 import { runVerifier } from '../agents/verifier.js';
+import { runVerifierOllama } from '../agents/verifier-ollama.js';
 import { runDiscoverer } from '../agents/discoverer.js';
 import type { DiscovererOutput } from '../types.js';
 import { logger } from '../config.js';
+import OpenAI from 'openai';
 
 export interface AdminRouterDeps {
   anthropic?: Anthropic;
   config?: { maxTokensPerAgent: number };
+  /** When set, verification uses Ollama instead of Anthropic */
+  ollamaClient?: OpenAI;
+  ollamaModel?: string;
   /** Injectable for testing — pre-bound discovery function */
   runDiscovery?: (existingUrls: string[]) => Promise<DiscovererOutput>;
 }
@@ -50,15 +55,20 @@ export function createAdminRouter(db: Database.Database, deps: AdminRouterDeps =
     site: { id: string; name: string; url: string },
     vrId: string
   ): void {
-    if (!deps.anthropic || !deps.config) return;
+    const hasAnthropic = deps.anthropic && deps.config;
+    const hasOllama = deps.ollamaClient && deps.ollamaModel;
+    if (!hasAnthropic && !hasOllama) return;
 
-    const anthropic = deps.anthropic;
-    const config = deps.config;
+    const anthropic = deps.anthropic!;
+    const config = deps.config!;
 
     const task: VerificationTask = async () => {
       logger.info({ siteId: site.id, vrId, queue: verificationQueue.length }, 'Starting verification');
       try {
-        const result = await runVerifier(site, anthropic, config);
+        const result =
+          deps.ollamaClient && deps.ollamaModel
+            ? await runVerifierOllama(site, deps.ollamaClient, deps.ollamaModel)
+            : await runVerifier(site, anthropic, config);
         const now = new Date().toISOString();
         db.prepare(
           `UPDATE verification_results

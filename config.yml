@@ -8,6 +8,17 @@ schedule: "0 */6 * * *"
 web:
   port: 3000
 
+# Optional: use a local Ollama model for site verification instead of Anthropic.
+# Eliminates rate limits and API costs for verification. Requires Ollama running locally
+# with a tool-calling model pulled (e.g. ollama pull qwen2.5:7b).
+# On Linux with Docker: use the host IP instead of localhost (e.g. http://172.17.0.1:11434).
+# Comment out or set to null to use Anthropic (claude-haiku) for verification.
+#
+ollama:
+  url: "http://host.docker.internal:11434"   # Mac/Windows
+  #url: "http://localhost:11434"               # running outside Docker
+  verification_model: "qwen3:8b"
+
 agent:
   token_budget_per_run: 50000   # Max tokens across all agents in one scan run
   max_turns_per_agent: 10       # Max tool-call turns per agent invocation

@@ -68,6 +68,13 @@ const ConfigSchema = z
       .default({}),
     criteria: z.array(CriterionSchema).default([]),
     sites: z.array(SiteSchema).default([]),
+    ollama: z
+      .object({
+        url: z.string().url().default('http://localhost:11434'),
+        verification_model: z.string().min(1),
+      })
+      .nullable()
+      .default(null),
   })
   .superRefine((data, ctx) => {
     data.criteria.forEach((criterion, i) => {
