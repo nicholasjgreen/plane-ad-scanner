@@ -9,6 +9,18 @@ overall interest is a weighted average with a feedback loop to refine weights ov
 are defined by stating high-level intent (e.g., 'IFR touring') and the system researches and agrees
 what that means concretely. Output is a ranked list of listings by interest level — no push alerts."
 
+## Clarifications
+
+### Session 2026-04-05
+
+- Q: How should ICAO airfield coordinates be resolved for the proximity criterion? → A: Bundled static `airports.csv` from ourairports.com; loaded into an in-memory index at startup; resolved entries cached in the `airfield_locations` SQLite table.
+- Q: How should users record feedback against a listing? → A: HTTP `POST /feedback` endpoint on the existing web server, with an inline thumbs-up/thumbs-down/neutral form on each listing row on the web page.
+- Q: Where does the minimum interest threshold (FR-016) live — global or per-profile? → A: Per-profile; each profile has its own `min_score` floor (0–100, default 0); a listing is excluded only if it falls below every active profile's floor (i.e., it is shown if it clears at least one profile's minimum).
+- Q: Where are profiles stored and how does the tool write back to them? → A: Each profile is its own YAML file in a `profiles/` directory (e.g. `profiles/ifr-touring.yml`); the tool reads all `*.yml` files in that directory at startup; accepting a weight suggestion atomically rewrites only the relevant profile file (with a timestamped backup).
+- Q: Does feature 002 add new web routes, or only change scoring data? → A: Two new routes: `POST /feedback` and `GET /suggest-weights`; `GET /` gains inline feedback forms on each listing row but no new route; `listings.match_score` continues to drive ordering (now written by the 002 Matcher rather than 001's built-in engine).
+
+---
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Browse a Ranked List of Interesting Listings (Priority: P1)
@@ -173,18 +185,24 @@ referencing those specific feedback entries.
 
 **Profiles & criteria:**
 
-- **FR-001**: The system MUST support multiple named interest profiles, each with a display name,
-  relative weight (positive number), optional description, and a list of confirmed criteria.
+- **FR-001**: The system MUST support multiple named interest profiles, each stored as a separate
+  YAML file in a `profiles/` directory (e.g. `profiles/ifr-touring.yml`). Each profile file
+  contains: display name, relative weight (positive number), optional description, `min_score`
+  floor (0–100, default 0), and a list of confirmed criteria.
 - **FR-002**: The system MUST score each listing against each active (weight > 0) profile on a
   0–100 scale.
 - **FR-003**: The system MUST compute an overall interest level as a weighted average of per-profile
   scores: `overall = Σ(score × weight) / Σ(weights)` across active profiles only.
 - **FR-004**: Each profile MUST support per-criterion weights so some criteria contribute more to
   the profile score than others.
+- **FR-004a**: Each profile MUST have a configurable `min_score` floor (0–100, default 0). A
+  listing is excluded from the ranked list only if its per-profile score falls below every active
+  profile's `min_score` (i.e., it is included if it clears at least one profile's floor).
 - **FR-005**: A single home location MUST be configured globally for all proximity criteria.
 - **FR-006**: Any profile with weight 0 MUST be treated as inactive and excluded from all scoring.
-- **FR-007**: Profile configuration MUST be validated at startup; invalid config MUST prevent the
-  system from starting, with a descriptive error.
+- **FR-007**: All `*.yml` files in the `profiles/` directory MUST be loaded and validated at
+  startup. Any invalid profile file MUST prevent the system from starting, with a descriptive
+  error identifying the offending file.
 
 **Criterion types:**
 
@@ -198,8 +216,10 @@ referencing those specific feedback entries.
   - **Listing type** — full-ownership, share/syndicate, or both.
   - **Proximity to home** — applies to share/syndicate listings only; scored by distance from the
     globally configured home location. Listing locations expressed as 4-letter ICAO airfield codes
-    MUST be resolved to geographic coordinates before distance is computed. Proximity criterion
-    MUST contribute 0 for full-ownership listings, with a note in evidence.
+    MUST be resolved to geographic coordinates using a bundled static `airports.csv` dataset
+    (ourairports.com); the dataset is loaded into an in-memory index at startup and resolved entries
+    are cached in the `airfield_locations` SQLite table. Proximity criterion MUST contribute 0 for
+    full-ownership listings, with a note in evidence.
 - **FR-009**: The system MUST report inference confidence in evidence when capability is inferred
   rather than explicitly stated.
 
@@ -218,13 +238,17 @@ referencing those specific feedback entries.
 **Ranked output:**
 
 - **FR-014**: The primary output of each scan run MUST be a ranked list of listings sorted
-  descending by overall interest level.
+  descending by overall interest level. The Matcher agent writes the computed overall interest
+  level to `listings.match_score`, replacing feature 001's built-in scorer; `GET /` displays
+  the ranked list using this column as before.
 - **FR-015**: The system MUST persist for each listing: overall interest level, per-profile scores,
   and structured evidence (matched/unmatched criteria with contributions and any inference notes).
   This data is displayed in the expanded view of the web page (feature 004) after the plain-English
   explanation — not as a standalone CLI output.
-- **FR-016**: Listings with an overall interest level below a configurable minimum threshold MUST
-  be excluded from the ranked list.
+- **FR-016**: A listing MUST be excluded from the ranked list if its per-profile score falls below
+  every active profile's `min_score` floor. A listing is included if it clears at least one active
+  profile's floor. The `min_score` is a per-profile value (0–100, default 0) stored in profile
+  config alongside its criteria.
 - **FR-017**: When no listings clear the threshold, the output MUST explicitly state this rather
   than producing silent empty output.
 
@@ -232,14 +256,19 @@ referencing those specific feedback entries.
 
 - **FR-018**: The system MUST allow feedback to be recorded against any listing in the ranked
   output: "more interesting than scored", "as expected", or "less interesting than scored".
+  Feedback is submitted via `POST /feedback` on the web server; the listings page MUST include
+  an inline thumbs-up / neutral / thumbs-down form on each listing row.
 - **FR-019**: Feedback MUST be stored persistently with the listing reference, rating, timestamp,
   and the profile weights active at the time.
-- **FR-020**: On demand, the system MUST generate a weight suggestion report analysing accumulated
-  feedback, proposing weight changes with plain-language rationale and supporting feedback counts.
+- **FR-020**: On demand, the system MUST generate a weight suggestion report via `GET /suggest-weights`,
+  analysing accumulated feedback and proposing per-profile weight changes with plain-language
+  rationale and supporting feedback counts. The page includes accept/reject controls that POST
+  back to trigger FR-022/FR-023.
 - **FR-021**: The system MUST require a configurable minimum feedback count (default: 5) before
   generating suggestions.
-- **FR-022**: Accepting a suggestion MUST update the config and retain a timestamped backup of the
-  prior config.
+- **FR-022**: Accepting a suggestion MUST atomically rewrite only the relevant profile's YAML file
+  (e.g. `profiles/ifr-touring.yml`) with updated weights, retaining a timestamped backup of the
+  prior file (e.g. `profiles/ifr-touring.yml.2026-04-05T120000Z.bak`) before overwriting.
 - **FR-023**: Rejecting a suggestion MUST record the rejection so it is not re-proposed unless new
   contradicting feedback accumulates.
 
@@ -291,7 +320,7 @@ referencing those specific feedback entries.
   aircraft type knowledge; the AI Matcher agent handles this inference.
 - The profile setup research step uses an AI agent to look up what a mission type requires; the
   output is proposed criteria, not automatically applied criteria.
-- Feedback is provided explicitly via CLI command; no automatic click-tracking or read receipts.
+- Feedback is submitted via `POST /feedback` on the web server (inline form on the listings page); no automatic click-tracking or read receipts.
 - Weight suggestions are generated on demand, not automatically triggered.
 - A single home location is sufficient for v1; multiple locations (e.g., home and work) are out of scope.
 - Listing locations for share listings are commonly expressed as 4-letter ICAO airfield codes
@@ -301,7 +330,7 @@ referencing those specific feedback entries.
   buyer can relocate the aircraft, making the airfield largely irrelevant.
 - Where a listing location cannot be resolved to coordinates (unrecognised code, free-text only),
   the proximity criterion degrades to 0 contribution rather than failing.
-- Profile config is the source of truth; there is no GUI.
+- Each profile is its own YAML file in a `profiles/` directory; all `*.yml` files in that directory are loaded at startup. Adding a new profile means dropping a new file in the directory; removing one means deleting it. There is no GUI for profile management.
 - The system is personal and single-user.
 - Listing type (share vs. full ownership) may need to be inferred from listing text when not
   explicitly stated (e.g., "1/4 share", "syndicate").
