@@ -1,6 +1,6 @@
 # plane-ad-scanner Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-04
+Auto-generated from all feature plans. Last updated: 2026-04-05
 
 ## Active Technologies
 - SQLite (feature 001's existing store) — two new columns on `listings`, one new `listing_ai` table (004-listing-presentation)
@@ -27,9 +27,9 @@ npm test && npm run lint
 TypeScript (strict mode), Node.js LTS: Follow standard conventions
 
 ## Recent Changes
+- 002-interest-profiles: Added [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
 - 003-site-discovery-management: Added TypeScript (strict mode), Node.js LTS v20 + `@anthropic-ai/sdk` v0.39+, `express`, `better-sqlite3`, `zod`, `pino`, `uuid` — all from feature 001; no new production dependencies
 - 001-plane-listing-scanner: Added TypeScript (strict mode) on Node.js LTS (v20+) + `@anthropic-ai/sdk`, `express`, `cheerio`, `better-sqlite3`, `node-cron`, `zod`, `pino`
-- 004-listing-presentation: Added TypeScript (strict mode), Node.js LTS + Anthropic Agent SDK (`@anthropic-ai/sdk`); existing web server and DB from feature 001
 
 
 <!-- MANUAL ADDITIONS START -->
