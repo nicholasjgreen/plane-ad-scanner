@@ -21,6 +21,8 @@ const minimalConfig: Config = {
   criteria: [],
   sites: [],
   ollama: null,
+  home_location: null,
+  feedback_min_count: 5,
 };
 
 function seedSite(db: Database.Database, name: string, url: string, enabled = true) {

@@ -6,13 +6,20 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import cron from 'node-cron';
-import { renderListingsPage } from './render.js';
-import type { ListingRow, LastScanInfo, ScanError, ListingsPageData, ActiveFilters } from './render.js';
+import { renderListingsPage, renderSuggestWeightsPage } from './render.js';
+import type { ListingRow, LastScanInfo, ScanError, ListingsPageData, ActiveFilters, EvidenceRow, SuggestWeightsPageData } from './render.js';
 import { logger, loadConfig } from '../config.js';
 import { initDb } from '../db/index.js';
 import { runScan } from '../agents/orchestrator.js';
 import { createAdminRouter } from '../admin/routes.js';
 import type { AdminRouterDeps } from '../admin/routes.js';
+import { runWeightSuggester } from '../agents/weight-suggester.js';
+import type { InterestProfile, FeedbackRecord } from '../types.js';
+import type { Config } from '../config.js';
+import { randomUUID } from 'node:crypto';
+import yaml from 'js-yaml';
+import { writeFileSync, readFileSync, renameSync, existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 interface DbListingRow {
   id: string;
@@ -39,6 +46,12 @@ interface DbScanRun {
   error_summary: string | null;
 }
 
+interface DbListingScore {
+  listing_id: string;
+  profile_name: string;
+  evidence: string;  // JSON: EvidenceItem[]
+}
+
 function toListingRow(r: DbListingRow): ListingRow {
   return {
     id: r.id,
@@ -59,7 +72,15 @@ function toListingRow(r: DbListingRow): ListingRow {
   };
 }
 
-export function createApp(db: Database.Database, adminDeps: AdminRouterDeps = {}): Application {
+interface AppDeps {
+  adminDeps?: AdminRouterDeps;
+  anthropic?: Anthropic;
+  config?: Config;
+  profiles?: InterestProfile[];
+  profilesDir?: string;
+}
+
+export function createApp(db: Database.Database, adminDeps: AdminRouterDeps = {}, appDeps: AppDeps = {}): Application {
   const app = express();
   app.use(express.urlencoded({ extended: false }));
   app.use('/admin', createAdminRouter(db, adminDeps));
@@ -97,6 +118,45 @@ export function createApp(db: Database.Database, adminDeps: AdminRouterDeps = {}
         .all(...params) as DbListingRow[]
     ).map(toListingRow);
 
+    // Populate per-criterion evidence from listing_scores
+    if (listings.length > 0) {
+      const ids = listings.map((l) => l.id);
+      const placeholders = ids.map(() => '?').join(',');
+      const scoreRows = db
+        .prepare(
+          `SELECT listing_id, profile_name, evidence FROM listing_scores WHERE listing_id IN (${placeholders})`
+        )
+        .all(...ids) as DbListingScore[];
+
+      const evidenceMap = new Map<string, EvidenceRow[]>();
+      for (const row of scoreRows) {
+        try {
+          const items = JSON.parse(row.evidence) as Array<{
+            criterionName: string;
+            matched: boolean;
+            contribution: number;
+            note: string;
+          }>;
+          const rows: EvidenceRow[] = items.map((item) => ({
+            profileName: row.profile_name,
+            criterionName: item.criterionName,
+            matched: item.matched,
+            contribution: item.contribution,
+            note: item.note,
+          }));
+          const existing = evidenceMap.get(row.listing_id) ?? [];
+          evidenceMap.set(row.listing_id, [...existing, ...rows]);
+        } catch {
+          // skip unparseable evidence rows
+        }
+      }
+
+      for (const listing of listings) {
+        const ev = evidenceMap.get(listing.id);
+        if (ev) listing.evidence = ev;
+      }
+    }
+
     const totalCount = (
       db.prepare('SELECT COUNT(*) as n FROM listings').get() as { n: number }
     ).n;
@@ -127,6 +187,197 @@ export function createApp(db: Database.Database, adminDeps: AdminRouterDeps = {}
     res.send(renderListingsPage(data));
   });
 
+  // -------------------------------------------------------------------------
+  // POST /feedback — store a listing rating
+  // -------------------------------------------------------------------------
+  app.post('/feedback', (req, res) => {
+    const { listing_id, rating } = req.body as { listing_id?: string; rating?: string };
+    const validRatings = ['more_interesting', 'as_expected', 'less_interesting'];
+
+    if (!listing_id || typeof listing_id !== 'string') {
+      res.status(400).send('Invalid listing_id');
+      return;
+    }
+    if (!rating || !validRatings.includes(rating)) {
+      res.status(400).send('Invalid rating');
+      return;
+    }
+
+    const row = db.prepare('SELECT id FROM listings WHERE id = ?').get(listing_id);
+    if (!row) {
+      res.status(404).send('Listing not found');
+      return;
+    }
+
+    const profiles = appDeps.profiles ?? [];
+    const weightsSnapshot = JSON.stringify(
+      profiles.map((p) => ({ profileName: p.name, weight: p.weight }))
+    );
+
+    db.prepare(
+      `INSERT INTO listing_feedback (id, listing_id, rating, weights_snapshot, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(randomUUID(), listing_id, rating, weightsSnapshot, new Date().toISOString());
+
+    res.redirect('/');
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /suggest-weights — show pending or newly-generated weight suggestions
+  // -------------------------------------------------------------------------
+  app.get('/suggest-weights', async (_req, res) => {
+    const config = appDeps.config;
+    const minCount = config?.feedback_min_count ?? 5;
+
+    const feedbackCount = (
+      db.prepare(`SELECT COUNT(*) as n FROM listing_feedback WHERE rating != 'as_expected'`).get() as { n: number }
+    ).n;
+
+    const suggestData: SuggestWeightsPageData = { suggestions: [], feedbackCount, minCount };
+
+    if (feedbackCount >= minCount) {
+      // Check for existing pending suggestions
+      const existing = db
+        .prepare(`SELECT id, profile_name, current_weight, proposed_weight, rationale, feedback_count FROM weight_suggestions WHERE status = 'pending' ORDER BY created_at DESC`)
+        .all() as Array<{
+          id: string;
+          profile_name: string;
+          current_weight: number;
+          proposed_weight: number;
+          rationale: string;
+          feedback_count: number;
+        }>;
+
+      if (existing.length > 0) {
+        suggestData.suggestions = existing.map((r) => ({
+          id: r.id,
+          profileName: r.profile_name,
+          currentWeight: r.current_weight,
+          proposedWeight: r.proposed_weight,
+          rationale: r.rationale,
+          feedbackCount: r.feedback_count,
+        }));
+      } else if (appDeps.anthropic && config) {
+        // Generate new suggestions
+        const feedbackRows = db
+          .prepare(`SELECT id, listing_id, rating, weights_snapshot, created_at FROM listing_feedback ORDER BY created_at DESC LIMIT 100`)
+          .all() as Array<{
+            id: string;
+            listing_id: string;
+            rating: string;
+            weights_snapshot: string;
+            created_at: string;
+          }>;
+
+        const feedback: FeedbackRecord[] = feedbackRows.map((r) => ({
+          id: r.id,
+          listingId: r.listing_id,
+          rating: r.rating as FeedbackRecord['rating'],
+          weightsSnapshot: JSON.parse(r.weights_snapshot) as Record<string, number>,
+          createdAt: r.created_at,
+        }));
+
+        const profiles = appDeps.profiles ?? [];
+        type SuggestionResult = Awaited<ReturnType<typeof runWeightSuggester>>;
+        const proposed: SuggestionResult = await runWeightSuggester(feedback, profiles, appDeps.anthropic, config).catch((err) => {
+          logger.error({ err }, 'WeightSuggester failed');
+          return [] as SuggestionResult;
+        });
+
+        if (proposed.length > 0) {
+          const createdAt = new Date().toISOString();
+          const insert = db.prepare(
+            `INSERT INTO weight_suggestions (id, profile_name, current_weight, proposed_weight, rationale, feedback_count, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`
+          );
+          db.transaction(() => {
+            for (const s of proposed) {
+              insert.run(randomUUID(), s.profileName, s.currentWeight, s.proposedWeight, s.rationale, s.feedbackCount, createdAt);
+            }
+          })();
+
+          suggestData.suggestions = proposed.map((s) => {
+            const id = (db.prepare(`SELECT id FROM weight_suggestions WHERE profile_name = ? AND created_at = ? LIMIT 1`).get(s.profileName, createdAt) as { id: string } | undefined)?.id ?? '';
+            return { id, profileName: s.profileName, currentWeight: s.currentWeight, proposedWeight: s.proposedWeight, rationale: s.rationale, feedbackCount: s.feedbackCount };
+          });
+        }
+      }
+    }
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(renderSuggestWeightsPage(suggestData));
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /suggest-weights/:action — accept or reject a suggestion
+  // -------------------------------------------------------------------------
+  app.post('/suggest-weights/:action', (req, res) => {
+    const { action } = req.params;
+    const { suggestion_id } = req.body as { suggestion_id?: string };
+
+    if (action !== 'accept' && action !== 'reject') {
+      res.status(400).send('Invalid action');
+      return;
+    }
+    if (!suggestion_id) {
+      res.status(400).send('Missing suggestion_id');
+      return;
+    }
+
+    const suggestion = db
+      .prepare(`SELECT * FROM weight_suggestions WHERE id = ? AND status = 'pending'`)
+      .get(suggestion_id) as {
+        id: string;
+        profile_name: string;
+        proposed_weight: number;
+      } | undefined;
+
+    if (!suggestion) {
+      res.status(404).send('Suggestion not found or already resolved');
+      return;
+    }
+
+    if (action === 'accept') {
+      // Find profile YAML file and update weight atomically
+      const profilesDir = appDeps.profilesDir ?? join(process.cwd(), 'profiles');
+      let profileFiles: string[] = [];
+      try {
+        profileFiles = readdirSync(profilesDir).filter((f) => f.endsWith('.yml') && !f.endsWith('.bak'));
+      } catch {
+        // profiles dir not found
+      }
+
+      let updated = false;
+      for (const file of profileFiles) {
+        const filePath = join(profilesDir, file);
+        try {
+          const raw = yaml.load(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+          if (raw.name === suggestion.profile_name) {
+            const tmpPath = filePath + '.tmp';
+            const bakPath = filePath + '.bak';
+            raw.weight = suggestion.proposed_weight;
+            writeFileSync(tmpPath, yaml.dump(raw, { quotingType: '"', forceQuotes: false }), 'utf8');
+            if (existsSync(filePath)) renameSync(filePath, bakPath);
+            renameSync(tmpPath, filePath);
+            updated = true;
+            break;
+          }
+        } catch {
+          // skip unreadable files
+        }
+      }
+
+      if (updated) {
+        logger.info({ profileName: suggestion.profile_name, newWeight: suggestion.proposed_weight }, 'Profile weight updated via suggestion accept');
+      }
+    }
+
+    db.prepare(`UPDATE weight_suggestions SET status = ?, resolved_at = ? WHERE id = ?`)
+      .run(action === 'accept' ? 'accepted' : 'rejected', new Date().toISOString(), suggestion_id);
+
+    res.redirect('/suggest-weights');
+  });
+
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', uptime: process.uptime() });
   });
@@ -151,21 +402,35 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const ollamaClient = config.ollama
     ? new OpenAI({ baseURL: `${config.ollama.url}/v1`, apiKey: 'ollama' })
     : undefined;
-  const app = createApp(db, {
-    anthropic,
-    config: { maxTokensPerAgent: config.agent.token_budget_per_run },
-    ollamaClient,
-    ollamaModel: config.ollama?.verification_model,
-  });
+
+  // Load interest profiles (feature 002)
+  const { loadProfiles } = await import('../services/profile-loader.js');
+  const profilesDir = join(process.cwd(), 'profiles');  // join imported at top-level
+  const profiles = loadProfiles(profilesDir);
+  if (profiles.length > 0) {
+    logger.info({ count: profiles.length }, 'Loaded interest profiles');
+  }
+
+  const app = createApp(
+    db,
+    {
+      anthropic,
+      config: { maxTokensPerAgent: config.agent.token_budget_per_run },
+      ollamaClient,
+      ollamaModel: config.ollama?.verification_model,
+    },
+    { anthropic, config, profiles, profilesDir }
+  );
   startServer(app, config.web.port);
 
   const serveOnly = process.env.SERVE_ONLY === 'true';
 
   const ollamaScraperModel =
     config.ollama?.scraper_model ?? config.ollama?.verification_model;
-  const scanDeps = ollamaClient && ollamaScraperModel
-    ? { ollamaClient, ollamaScraperModel }
-    : {};
+  const scanDeps = {
+    ...(ollamaClient && ollamaScraperModel ? { ollamaClient, ollamaScraperModel } : {}),
+    profiles,
+  };
 
   if (!serveOnly && config.schedule) {
     if (!cron.validate(config.schedule)) {

@@ -228,3 +228,96 @@ describe('GET /health', () => {
     expect(body.status).toBe('ok');
   });
 });
+
+describe('POST /feedback', () => {
+  let server: http.Server;
+  let base: string;
+  let db: ReturnType<typeof createTestDb>;
+  let listingId: string;
+
+  beforeAll(async () => {
+    db = createTestDb();
+    listingId = randomUUID();
+    db.prepare(
+      `INSERT INTO listings (id, aircraft_type, listing_url, source_site, match_score, is_new, date_first_found, date_last_seen, raw_attributes, price_currency)
+       VALUES (?, 'Cessna 172', 'https://ex.com/1', 'TestSite', 80, 0, ?, ?, '{}', 'GBP')`
+    ).run(listingId, NOW, NOW);
+    ({ server, base } = await startTestServer(db));
+  });
+
+  afterAll(() => { server.close(); db.close(); });
+
+  it('accepts valid rating and redirects to /', async () => {
+    const res = await fetch(`${base}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ listing_id: listingId, rating: 'more_interesting' }).toString(),
+      redirect: 'manual',
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/');
+  });
+
+  it('stores feedback row in DB', async () => {
+    const row = db.prepare('SELECT rating FROM listing_feedback WHERE listing_id = ?').get(listingId) as { rating: string } | undefined;
+    expect(row?.rating).toBe('more_interesting');
+  });
+
+  it('returns 400 for invalid rating', async () => {
+    const res = await fetch(`${base}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ listing_id: listingId, rating: 'invalid' }).toString(),
+      redirect: 'manual',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when listing_id is missing', async () => {
+    const res = await fetch(`${base}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ rating: 'as_expected' }).toString(),
+      redirect: 'manual',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 for non-existent listing', async () => {
+    const res = await fetch(`${base}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ listing_id: randomUUID(), rating: 'as_expected' }).toString(),
+      redirect: 'manual',
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /suggest-weights', () => {
+  let server: http.Server;
+  let base: string;
+  let db: ReturnType<typeof createTestDb>;
+
+  beforeAll(async () => {
+    db = createTestDb();
+    ({ server, base } = await startTestServer(db));
+  });
+
+  afterAll(() => { server.close(); db.close(); });
+
+  it('returns 200', async () => {
+    const res = await fetch(`${base}/suggest-weights`);
+    expect(res.status).toBe(200);
+  });
+
+  it('shows "not enough feedback" message when below threshold', async () => {
+    const html = await fetch(`${base}/suggest-weights`).then((r) => r.text());
+    expect(html).toContain('Not enough feedback');
+  });
+
+  it('shows back-to-listings link', async () => {
+    const html = await fetch(`${base}/suggest-weights`).then((r) => r.text());
+    expect(html).toContain('href="/"');
+  });
+});

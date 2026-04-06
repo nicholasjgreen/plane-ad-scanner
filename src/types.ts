@@ -30,6 +30,8 @@ export interface ListingForScoring {
   price: number | null;
   priceCurrency: string;
   location: string | null;
+  listingType?: 'full_ownership' | 'share' | null;
+  icaoCode?: string | null;  // Airfield ICAO code for proximity criterion (share listings)
 }
 
 export interface ListingScore {
@@ -82,4 +84,77 @@ export interface DiscovererInput {
 
 export interface DiscovererOutput {
   candidates: DiscoveryCandidate[];
+}
+
+// ---------------------------------------------------------------------------
+// Feature 002: Profile-based interest scoring
+// ---------------------------------------------------------------------------
+
+export interface ProfileCriterion {
+  type: 'mission_type' | 'make_model' | 'price_range' | 'year_range' | 'listing_type' | 'proximity';
+  weight: number;
+  // type-specific fields:
+  intent?: string;             // mission_type
+  sub_criteria?: string[];     // mission_type
+  make?: string | null;        // make_model
+  model?: string | null;       // make_model (wildcard * supported)
+  min?: number;                // price_range
+  max?: number;                // price_range
+  yearMin?: number;            // year_range
+  yearMax?: number;            // year_range
+  listingType?: 'full_ownership' | 'share' | 'any';  // listing_type
+  maxDistanceKm?: number;      // proximity
+}
+
+export interface InterestProfile {
+  name: string;
+  weight: number;              // 0 = inactive
+  description?: string;
+  min_score: number;           // 0–100
+  intent?: string;
+  criteria: ProfileCriterion[];
+}
+
+export interface EvidenceItem {
+  criterionName: string;
+  matched: boolean;
+  contribution: number;        // 0–100 contribution to profile score
+  note: string;
+  confidence: 'high' | 'medium' | 'low' | null;  // null for deterministic criteria
+}
+
+export interface ProfileScore {
+  profileName: string;
+  score: number;               // 0–100
+  evidence: EvidenceItem[];
+}
+
+export interface ProfileMatcherOutput {
+  scores: Array<{
+    listingId: string;
+    overallScore: number;      // weighted average written to listings.match_score
+    profileScores: ProfileScore[];
+  }>;
+}
+
+export type FeedbackRating = 'more_interesting' | 'as_expected' | 'less_interesting';
+
+export interface FeedbackRecord {
+  id: string;
+  listingId: string;
+  rating: FeedbackRating;
+  weightsSnapshot: Record<string, number>;  // profileName → weight
+  createdAt: string;
+}
+
+export interface WeightSuggestion {
+  id: string;
+  profileName: string;
+  currentWeight: number;
+  proposedWeight: number;
+  rationale: string;
+  feedbackCount: number;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: string;
+  resolvedAt: string | null;
 }

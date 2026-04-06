@@ -10,6 +10,7 @@
   "scripts": {
     "start": "tsx src/web/server.ts",
     "scan": "tsx src/cli/scan.ts",
+    "setup-profile": "tsx src/cli/setup-profile.ts",
     "serve": "SERVE_ONLY=true tsx src/web/server.ts",
     "build": "tsc --noEmit",
     "test": "vitest run",

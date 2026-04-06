@@ -1,0 +1,24 @@
+name: "IFR Touring"
+weight: 1.0
+description: "IFR-capable aircraft for touring in UK and Europe"
+min_score: 20
+intent: "IFR touring in the UK and Europe"
+criteria:
+  - type: mission_type
+    intent: "IFR certified avionics suite"
+    weight: 3.0
+    sub_criteria:
+      - "GPS navigator capable of IFR approaches"
+      - "Mode S transponder"
+      - "Working attitude indicator"
+  - type: price_range
+    min: 30000
+    max: 100000
+    weight: 2.0
+  - type: year_range
+    yearMin: 1990
+    yearMax: 2025
+    weight: 0.5
+  - type: listing_type
+    listingType: "full_ownership"
+    weight: 1.0

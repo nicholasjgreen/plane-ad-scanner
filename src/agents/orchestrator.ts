@@ -14,6 +14,7 @@ import type {
   HistorianResult,
   ScanRunResult,
   ScanError,
+  InterestProfile,
 } from '../types.js';
 import type { Config, Criterion } from '../config.js';
 import { logger } from '../config.js';
@@ -25,9 +26,10 @@ export interface OrchestratorDeps {
     siteName: string,
     scanStartedAt: string
   ) => Promise<HistorianResult>;
-  matcher?: (listings: ListingForScoring[], criteria: Criterion[]) => Promise<MatcherOutput>;
+  matcher?: (listings: ListingForScoring[], criteria: Criterion[], profiles?: InterestProfile[], db?: Database.Database, homeLocation?: { lat: number; lon: number } | null) => Promise<MatcherOutput>;
   ollamaClient?: OpenAI;
   ollamaScraperModel?: string;
+  profiles?: InterestProfile[];
 }
 
 // Validate raw listings from the scraper before passing to the Historian.
@@ -108,6 +110,7 @@ export async function runScan(
     ((listings, siteName, ts) => runHistorian(db, listings, siteName, ts));
 
   const matcherFn = deps.matcher ?? runMatcher;
+  const profiles = deps.profiles ?? [];
 
   // Run all scrapers in parallel
   const settled = await Promise.allSettled(sites.map((s) => scraperFn(s)));
@@ -179,7 +182,7 @@ export async function runScan(
         .map(toListingForScoring);
 
       if (rows.length > 0) {
-        const matcherOut = await matcherFn(rows, config.criteria);
+        const matcherOut = await matcherFn(rows, config.criteria, profiles, db, config.home_location);
         if (matcherOut.scores.length > 0) {
           const upd = db.prepare('UPDATE listings SET match_score = ? WHERE id = ?');
           db.transaction(() => {

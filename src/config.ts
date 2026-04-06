@@ -76,6 +76,14 @@ const ConfigSchema = z
       })
       .nullable()
       .default(null),
+    home_location: z
+      .object({
+        lat: z.number().min(-90).max(90),
+        lon: z.number().min(-180).max(180),
+      })
+      .nullable()
+      .default(null),
+    feedback_min_count: z.number().int().positive().default(5),
   })
   .superRefine((data, ctx) => {
     data.criteria.forEach((criterion, i) => {

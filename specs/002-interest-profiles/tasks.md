@@ -17,9 +17,9 @@
 
 **Purpose**: Static data and profile directory that all stories depend on.
 
-- [ ] T001 Download `airports.csv` from ourairports.com and save to `data/airports.csv` (run: `curl -L "https://davidmegginson.github.io/ourairports-data/airports.csv" -o data/airports.csv`)
-- [ ] T002 Create `profiles/` directory and add `profiles/example-ifr-touring.yml` from the example in `specs/002-interest-profiles/data-model.md`
-- [ ] T003 Add `profiles/` to `.gitignore` exclusions except the example file (keep `!profiles/example-*.yml`); add `data/airports.csv` to git tracking
+- [X] T001 Download `airports.csv` from ourairports.com and save to `data/airports.csv` (run: `curl -L "https://davidmegginson.github.io/ourairports-data/airports.csv" -o data/airports.csv`)
+- [X] T002 Create `profiles/` directory and add `profiles/example-ifr-touring.yml` from the example in `specs/002-interest-profiles/data-model.md`
+- [X] T003 Add `profiles/` to `.gitignore` exclusions except the example file (keep `!profiles/example-*.yml`); add `data/airports.csv` to git tracking
 
 ---
 
@@ -29,10 +29,10 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T004 Create `src/db/migrations/003-interest-profiles.sql` with four new tables: `listing_scores`, `listing_feedback`, `weight_suggestions`, `airfield_locations` — exact schema from `specs/002-interest-profiles/data-model.md`
-- [ ] T005 Extend `src/types.ts` with new types: `InterestProfile`, `ProfileCriterion`, `EvidenceItem`, `ProfileScore`, `ProfileMatcherOutput`, `FeedbackRecord`, `FeedbackRating`, `WeightSuggestion` — exact shapes from `specs/002-interest-profiles/data-model.md`
-- [ ] T006 Extend `src/config.ts` `ConfigSchema` with `home_location` (`{ lat, lon } | null`, default null) and `feedback_min_count` (int, default 5); export updated `Config` type
-- [ ] T007 Create `src/services/profile-loader.ts`: reads all `*.yml` (excluding `*.bak`) from a given directory, parses with `js-yaml`, validates each against the Zod `InterestProfileSchema` from `specs/002-interest-profiles/contracts/profile-schema.md`, throws a descriptive startup error naming the file on any failure; exports `loadProfiles(dir: string): InterestProfile[]`
+- [X] T004 Create `src/db/migrations/003-interest-profiles.sql` with four new tables: `listing_scores`, `listing_feedback`, `weight_suggestions`, `airfield_locations` — exact schema from `specs/002-interest-profiles/data-model.md`
+- [X] T005 Extend `src/types.ts` with new types: `InterestProfile`, `ProfileCriterion`, `EvidenceItem`, `ProfileScore`, `ProfileMatcherOutput`, `FeedbackRecord`, `FeedbackRating`, `WeightSuggestion` — exact shapes from `specs/002-interest-profiles/data-model.md`
+- [X] T006 Extend `src/config.ts` `ConfigSchema` with `home_location` (`{ lat, lon } | null`, default null) and `feedback_min_count` (int, default 5); export updated `Config` type
+- [X] T007 Create `src/services/profile-loader.ts`: reads all `*.yml` (excluding `*.bak`) from a given directory, parses with `js-yaml`, validates each against the Zod `InterestProfileSchema` from `specs/002-interest-profiles/contracts/profile-schema.md`, throws a descriptive startup error naming the file on any failure; exports `loadProfiles(dir: string): InterestProfile[]`
 
 **Checkpoint**: Migration, types, config, and profile loader ready. User story implementation can begin.
 
@@ -46,15 +46,15 @@
 
 ### Tests for User Story 1 ⚠️ TDD — write FIRST, confirm FAIL before implementing
 
-- [ ] T008 [US1] Write `tests/unit/profile-scorer.test.ts` covering: make_model wildcard match, price_range in/out of bounds, year_range in/out of bounds, listing_type full_ownership vs share, profile with weight=0 excluded, overall weighted average, min_score exclusion (listing excluded only when below ALL profiles' floors), empty profiles returns 0 — **run `docker compose run --rm app npm test` and confirm these tests FAIL before proceeding**
+- [X] T008 [US1] Write `tests/unit/profile-scorer.test.ts` covering: make_model wildcard match, price_range in/out of bounds, year_range in/out of bounds, listing_type full_ownership vs share, profile with weight=0 excluded, overall weighted average, min_score exclusion (listing excluded only when below ALL profiles' floors), empty profiles returns 0 — **run `docker compose run --rm app npm test` and confirm these tests FAIL before proceeding**
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Create `src/services/profile-scorer.ts`: pure function `scoreListingAgainstProfiles(listing: ListingForScoring, profiles: InterestProfile[]): { overallScore: number; profileScores: ProfileScore[] }` — deterministic criterion types only (make_model, price_range, year_range, listing_type; proximity returns 0 until Phase 6); `mission_type` returns 0 with note "requires AI evaluation — see Phase 5 US3" — **implement until T008 tests pass (GREEN)**
-- [ ] T010 [US1] Update `src/agents/matcher.ts`: replace `scoreListing` call with `scoreListingAgainstProfiles`; accept `profiles: InterestProfile[]` as a new parameter alongside `criteria`; if profiles non-empty use profile scorer; else fall back to existing `scoreListing` from `scoring.ts`; persist `listing_scores` rows for each listing × profile using a new `persistProfileScores(db, listingId, profileScores, scoredAt)` helper
-- [ ] T011 [US1] Update `src/agents/orchestrator.ts`: load profiles via `loadProfiles(profilesDir)` at start of `runScan` (profilesDir passed via config or deps); pass profiles to matcher; add `profilesDir` to `OrchestratorDeps`
-- [ ] T012 [US1] Update `src/web/server.ts`: call `loadProfiles(profilesDir)` on startup; pass profiles to orchestrator and to app deps; `profilesDir` defaults to `path.join(process.cwd(), 'profiles')`
-- [ ] T013 [US1] Update `src/cli/scan.ts`: pass `profilesDir` to orchestrator deps
+- [X] T009 [US1] Create `src/services/profile-scorer.ts`: pure function `scoreListingAgainstProfiles(listing: ListingForScoring, profiles: InterestProfile[]): { overallScore: number; profileScores: ProfileScore[] }` — deterministic criterion types only (make_model, price_range, year_range, listing_type; proximity returns 0 until Phase 6); `mission_type` returns 0 with note "requires AI evaluation — see Phase 5 US3" — **implement until T008 tests pass (GREEN)**
+- [X] T010 [US1] Update `src/agents/matcher.ts`: replace `scoreListing` call with `scoreListingAgainstProfiles`; accept `profiles: InterestProfile[]` as a new parameter alongside `criteria`; if profiles non-empty use profile scorer; else fall back to existing `scoreListing` from `scoring.ts`; persist `listing_scores` rows for each listing × profile using a new `persistProfileScores(db, listingId, profileScores, scoredAt)` helper
+- [X] T011 [US1] Update `src/agents/orchestrator.ts`: load profiles via `loadProfiles(profilesDir)` at start of `runScan` (profilesDir passed via config or deps); pass profiles to matcher; add `profilesDir` to `OrchestratorDeps`
+- [X] T012 [US1] Update `src/web/server.ts`: call `loadProfiles(profilesDir)` on startup; pass profiles to orchestrator and to app deps; `profilesDir` defaults to `path.join(process.cwd(), 'profiles')`
+- [X] T013 [US1] Update `src/cli/scan.ts`: pass `profilesDir` to orchestrator deps
 
 **Checkpoint**: Run `docker compose run --rm scan`; check `listings.match_score` written; check `listing_scores` rows in DB. US1 independently functional.
 
@@ -68,9 +68,9 @@
 
 ### Implementation for User Story 2
 
-- [ ] T014 [P] [US2] Create `src/agents/profile-researcher.ts`: async function `runProfileResearcher(intent: string, anthropic: Anthropic, config: Config): Promise<{ proposed: Array<{ type: string; description: string; rationale: string; defaults: Record<string, unknown> }> }>` — prompt the LLM with the intent, request a JSON array of proposed criteria with descriptions and rationale; no tools (pure LLM generation); bounded by `config.agent.max_turns_per_agent`
-- [ ] T015 [US2] Create `src/cli/setup-profile.ts`: interactive CLI flow — prompt for profile name and intent; call `runProfileResearcher`; display each proposed criterion with accept (y) / modify (m) / reject (r) prompt; assemble confirmed criteria into `InterestProfileSchema`-valid object; write to `profiles/<slug>.yml`; validate final file via `loadProfiles` before confirming success
-- [ ] T016 [US2] Add `"setup-profile": "tsx src/cli/setup-profile.ts"` to `package.json` scripts
+- [X] T014 [P] [US2] Create `src/agents/profile-researcher.ts`: async function `runProfileResearcher(intent: string, anthropic: Anthropic, config: Config): Promise<{ proposed: Array<{ type: string; description: string; rationale: string; defaults: Record<string, unknown> }> }>` — prompt the LLM with the intent, request a JSON array of proposed criteria with descriptions and rationale; no tools (pure LLM generation); bounded by `config.agent.max_turns_per_agent`
+- [X] T015 [US2] Create `src/cli/setup-profile.ts`: interactive CLI flow — prompt for profile name and intent; call `runProfileResearcher`; display each proposed criterion with accept (y) / modify (m) / reject (r) prompt; assemble confirmed criteria into `InterestProfileSchema`-valid object; write to `profiles/<slug>.yml`; validate final file via `loadProfiles` before confirming success
+- [X] T016 [US2] Add `"setup-profile": "tsx src/cli/setup-profile.ts"` to `package.json` scripts
 
 **Checkpoint**: `npm run setup-profile` (or `docker compose run --rm app npm run setup-profile`) produces a valid profile YAML. US2 independently functional.
 
@@ -84,8 +84,8 @@
 
 ### Implementation for User Story 3
 
-- [ ] T017 [P] [US3] Update `src/services/profile-scorer.ts` to produce complete `EvidenceItem[]` for every criterion (matched AND unmatched): include `criterionName`, `matched`, `contribution` (0 for unmatched), `note` (human-readable), `confidence: null` for deterministic criteria — update T008 tests to cover evidence shape
-- [ ] T018 [P] [US3] Update `src/web/render.ts`: add "Show evidence" toggle on each listing row that expands to show `listing_scores` evidence; query `listing_scores` from DB grouped by `listing_id`; render as a table of criteria with matched/unmatched indicators and contributions
+- [X] T017 [P] [US3] Update `src/services/profile-scorer.ts` to produce complete `EvidenceItem[]` for every criterion (matched AND unmatched): include `criterionName`, `matched`, `contribution` (0 for unmatched), `note` (human-readable), `confidence: null` for deterministic criteria — update T008 tests to cover evidence shape
+- [X] T018 [P] [US3] Update `src/web/render.ts`: add "Show evidence" toggle on each listing row that expands to show `listing_scores` evidence; query `listing_scores` from DB grouped by `listing_id`; render as a table of criteria with matched/unmatched indicators and contributions
 
 **Checkpoint**: Load web page; expand a listing; see per-criterion evidence table. US3 independently functional.
 
@@ -99,13 +99,13 @@
 
 ### Tests for User Story 4 ⚠️ TDD — write FIRST, confirm FAIL before implementing
 
-- [ ] T019 [US4] Write `tests/unit/icao.test.ts` covering: `haversineKm` (known distances EGBJ→EGLL ~160 km within 10 km tolerance), ICAO resolution from CSV (EGBJ present), unknown code returns null, proximity score 0 when code unknown, proximity score decreasing with distance, score = 0 beyond maxDistanceKm, full-ownership listing → 0 regardless of distance — **confirm these tests FAIL before implementing**
+- [X] T019 [US4] Write `tests/unit/icao.test.ts` covering: `haversineKm` (known distances EGBJ→EGLL ~160 km within 10 km tolerance), ICAO resolution from CSV (EGBJ present), unknown code returns null, proximity score 0 when code unknown, proximity score decreasing with distance, score = 0 beyond maxDistanceKm, full-ownership listing → 0 regardless of distance — **confirm these tests FAIL before implementing**
 
 ### Implementation for User Story 4
 
-- [ ] T020 [US4] Create `src/services/icao.ts`: load `data/airports.csv` into `Map<string, { name: string; lat: number; lon: number }>` at module load; export `resolveIcao(code: string): { name: string; lat: number; lon: number } | null`; export `haversineKm(lat1, lon1, lat2, lon2): number`; export `proximityScore(icaoCode: string | null, listingType: string, homeLat: number, homeLon: number, maxDistanceKm: number): { score: number; note: string }` — **implement until T019 tests pass (GREEN)**
-- [ ] T021 [US4] Update `src/services/profile-scorer.ts`: handle `proximity` criterion type using `proximityScore` from `icao.ts`; full-ownership listing → `{ score: 0, note: "proximity only applies to share listings" }`; `home_location: null` → `{ score: 0, note: "home_location not configured" }`
-- [ ] T022 [US4] Wire ICAO cache to DB: after resolving a new code, upsert into `airfield_locations` table; add helper `cacheAirfield(db, icaoCode, name, lat, lon)` in `src/services/icao.ts`; pass `db` into `proximityScore` call from profile-scorer
+- [X] T020 [US4] Create `src/services/icao.ts`: load `data/airports.csv` into `Map<string, { name: string; lat: number; lon: number }>` at module load; export `resolveIcao(code: string): { name: string; lat: number; lon: number } | null`; export `haversineKm(lat1, lon1, lat2, lon2): number`; export `proximityScore(icaoCode: string | null, listingType: string, homeLat: number, homeLon: number, maxDistanceKm: number): { score: number; note: string }` — **implement until T019 tests pass (GREEN)**
+- [X] T021 [US4] Update `src/services/profile-scorer.ts`: handle `proximity` criterion type using `proximityScore` from `icao.ts`; full-ownership listing → `{ score: 0, note: "proximity only applies to share listings" }`; `home_location: null` → `{ score: 0, note: "home_location not configured" }`
+- [X] T022 [US4] Wire ICAO cache to DB: after resolving a new code, upsert into `airfield_locations` table; add helper `cacheAirfield(db, icaoCode, name, lat, lon)` in `src/services/icao.ts`; pass `db` into `proximityScore` call from profile-scorer
 
 **Checkpoint**: Run scan with share listings containing ICAO codes; check proximity scores and `airfield_locations` cache. US4 independently functional.
 
@@ -119,12 +119,12 @@
 
 ### Implementation for User Story 5
 
-- [ ] T023 [P] [US5] Update `src/web/render.ts`: add inline thumbs-up / neutral / thumbs-down form on each listing row (`POST /feedback` with `listing_id` and `rating`); add `renderSuggestWeightsPage(suggestions, feedbackCount, minCount)` function
-- [ ] T024 [US5] Add `POST /feedback` route to `src/web/server.ts`: validate `listing_id` (must exist in DB) and `rating` (must be valid enum); capture current profile weights snapshot as JSON; insert into `listing_feedback`; redirect to `GET /`
-- [ ] T025 [US5] Create `src/agents/weight-suggester.ts`: async function `runWeightSuggester(feedback: FeedbackRecord[], profiles: InterestProfile[], anthropic: Anthropic, config: Config): Promise<Omit<WeightSuggestion, 'id' | 'status' | 'createdAt' | 'resolvedAt'>[]>` — prompt LLM with feedback data and current weights; request proposed weight adjustments with rationale; no tools; return structured array
-- [ ] T026 [US5] Add `GET /suggest-weights` route to `src/web/server.ts`: count non-neutral feedback; if below `feedback_min_count` render "need N more" page; load pending suggestions from DB (if any); if none, call `runWeightSuggester` and persist results; render suggest-weights page
-- [ ] T027 [US5] Add `POST /suggest-weights/:action` route to `src/web/server.ts`: for `accept` — load suggestion, find profile file by `profile_name`, write new weight atomically (tmp → bak rename → rename), update `weight_suggestions.status`; for `reject` — update status only; redirect to `GET /suggest-weights`
-- [ ] T028 [US5] Add integration test coverage to `tests/integration/web.test.ts`: `POST /feedback` with valid and invalid inputs; `GET /suggest-weights` below threshold; mock `runWeightSuggester` and verify suggestion page renders
+- [X] T023 [P] [US5] Update `src/web/render.ts`: add inline thumbs-up / neutral / thumbs-down form on each listing row (`POST /feedback` with `listing_id` and `rating`); add `renderSuggestWeightsPage(suggestions, feedbackCount, minCount)` function
+- [X] T024 [US5] Add `POST /feedback` route to `src/web/server.ts`: validate `listing_id` (must exist in DB) and `rating` (must be valid enum); capture current profile weights snapshot as JSON; insert into `listing_feedback`; redirect to `GET /`
+- [X] T025 [US5] Create `src/agents/weight-suggester.ts`: async function `runWeightSuggester(feedback: FeedbackRecord[], profiles: InterestProfile[], anthropic: Anthropic, config: Config): Promise<Omit<WeightSuggestion, 'id' | 'status' | 'createdAt' | 'resolvedAt'>[]>` — prompt LLM with feedback data and current weights; request proposed weight adjustments with rationale; no tools; return structured array
+- [X] T026 [US5] Add `GET /suggest-weights` route to `src/web/server.ts`: count non-neutral feedback; if below `feedback_min_count` render "need N more" page; load pending suggestions from DB (if any); if none, call `runWeightSuggester` and persist results; render suggest-weights page
+- [X] T027 [US5] Add `POST /suggest-weights/:action` route to `src/web/server.ts`: for `accept` — load suggestion, find profile file by `profile_name`, write new weight atomically (tmp → bak rename → rename), update `weight_suggestions.status`; for `reject` — update status only; redirect to `GET /suggest-weights`
+- [X] T028 [US5] Add integration test coverage to `tests/integration/web.test.ts`: `POST /feedback` with valid and invalid inputs; `GET /suggest-weights` below threshold; mock `runWeightSuggester` and verify suggestion page renders
 
 **Checkpoint**: Full feedback loop operational: submit feedback → request suggestions → accept → verify profile YAML updated with backup. US5 independently functional.
 
@@ -134,9 +134,9 @@
 
 **Purpose**: Documentation, lint, final validation.
 
-- [ ] T029 Update `README.md` with feature 002 prerequisites (download `airports.csv`), `profiles/` directory setup, and `npm run setup-profile` command (Constitution Principle VIII)
-- [ ] T030 [P] Run `docker compose run --rm app npm test && docker compose run --rm app npm run lint` — fix any failures
-- [ ] T031 Run through `specs/002-interest-profiles/quickstart.md` validation scenarios manually; confirm all pass
+- [X] T029 Update `README.md` with feature 002 prerequisites (download `airports.csv`), `profiles/` directory setup, and `npm run setup-profile` command (Constitution Principle VIII)
+- [X] T030 [P] Run `docker compose run --rm app npm test && docker compose run --rm app npm run lint` — fix any failures
+- [X] T031 Run through `specs/002-interest-profiles/quickstart.md` validation scenarios manually; confirm all pass
 
 ---
 

@@ -1,6 +1,14 @@
 // Server-rendered HTML template for the listings page.
 // All rendering rules from contracts/web-routes.md are implemented here.
 
+export interface EvidenceRow {
+  profileName: string;
+  criterionName: string;
+  matched: boolean;
+  contribution: number;
+  note: string;
+}
+
 export interface ListingRow {
   id: string;
   registration: string | null;
@@ -17,6 +25,7 @@ export interface ListingRow {
   isNew: boolean;
   dateFirstFound: string;
   dateLastSeen: string;
+  evidence?: EvidenceRow[];  // Per-criterion breakdown from listing_scores
 }
 
 export interface LastScanInfo {
@@ -34,6 +43,21 @@ export interface ActiveFilters {
   type: string | null;
   maxPrice: number | null;
   newOnly: boolean;
+}
+
+export interface WeightSuggestionRow {
+  id: string;
+  profileName: string;
+  currentWeight: number;
+  proposedWeight: number;
+  rationale: string;
+  feedbackCount: number;
+}
+
+export interface SuggestWeightsPageData {
+  suggestions: WeightSuggestionRow[];
+  feedbackCount: number;
+  minCount: number;
 }
 
 export interface ListingsPageData {
@@ -78,6 +102,31 @@ function renderErrorBanner(errors: ScanError[]): string {
     </div>`;
 }
 
+function renderEvidence(evidence: EvidenceRow[]): string {
+  if (evidence.length === 0) return '';
+  const matchCount = evidence.filter((e) => e.matched).length;
+  const rows = evidence
+    .map(
+      (e) => `
+        <tr class="${e.matched ? 'ev--match' : 'ev--miss'}">
+          <td>${esc(e.profileName)}</td>
+          <td>${esc(e.criterionName)}</td>
+          <td class="ev__icon">${e.matched ? '✓' : '✗'}</td>
+          <td class="ev__num">${e.contribution > 0 ? e.contribution.toFixed(1) : '—'}</td>
+          <td>${esc(e.note)}</td>
+        </tr>`
+    )
+    .join('');
+  return `
+    <details class="evidence">
+      <summary class="evidence__summary">${matchCount}/${evidence.length} criteria matched — show details</summary>
+      <table class="evidence__table">
+        <thead><tr><th>Profile</th><th>Criterion</th><th></th><th>Score</th><th>Note</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </details>`;
+}
+
 function renderListing(l: ListingRow): string {
   const title = [l.aircraftType ?? [l.make, l.model].filter(Boolean).join(' ') ?? 'Unknown aircraft']
     .join('');
@@ -99,6 +148,14 @@ function renderListing(l: ListingRow): string {
         <dt>Source</dt>   <dd>${esc(l.sourceSite)}</dd>
         <dt>First seen</dt><dd>${fmtDate(l.dateFirstFound)}</dd>
       </dl>
+      ${l.evidence && l.evidence.length > 0 ? renderEvidence(l.evidence) : ''}
+      <form class="feedback" method="post" action="/feedback">
+        <input type="hidden" name="listing_id" value="${esc(l.id)}">
+        <span class="feedback__label">Rate this listing:</span>
+        <button class="feedback__btn feedback__btn--up" name="rating" value="more_interesting" title="More interesting than expected">👍</button>
+        <button class="feedback__btn" name="rating" value="as_expected" title="As expected">👌</button>
+        <button class="feedback__btn feedback__btn--down" name="rating" value="less_interesting" title="Less interesting than expected">👎</button>
+      </form>
     </article>`;
 }
 
@@ -136,6 +193,73 @@ function renderBody(data: ListingsPageData): string {
     return `<p class="empty">No listings found. The last scan ran at ${esc(lastScan!.startedAt)} but returned no results.</p>`;
   }
   return listings.map(renderListing).join('\n');
+}
+
+export function renderSuggestWeightsPage(data: SuggestWeightsPageData): string {
+  const { suggestions, feedbackCount, minCount } = data;
+
+  let body: string;
+  if (feedbackCount < minCount) {
+    body = `<p class="empty">Not enough feedback yet — ${feedbackCount} of ${minCount} required ratings received. Rate some listings to unlock suggestions.</p>`;
+  } else if (suggestions.length === 0) {
+    body = `<p class="empty">No weight suggestions generated. Try rating more listings first.</p>`;
+  } else {
+    const rows = suggestions
+      .map(
+        (s) => `
+      <tr>
+        <td>${esc(s.profileName)}</td>
+        <td>${s.currentWeight.toFixed(2)}</td>
+        <td>${s.proposedWeight.toFixed(2)}</td>
+        <td>${esc(s.rationale)}</td>
+        <td>
+          <div class="sw-actions">
+            <form method="post" action="/suggest-weights/accept">
+              <input type="hidden" name="suggestion_id" value="${esc(s.id)}">
+              <button class="btn-accept" type="submit">Accept</button>
+            </form>
+            <form method="post" action="/suggest-weights/reject">
+              <input type="hidden" name="suggestion_id" value="${esc(s.id)}">
+              <button class="btn-reject" type="submit">Reject</button>
+            </form>
+          </div>
+        </td>
+      </tr>`
+      )
+      .join('');
+    body = `
+    <table class="sw-table">
+      <thead><tr><th>Profile</th><th>Current weight</th><th>Proposed weight</th><th>Rationale</th><th>Actions</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Weight Suggestions — Plane Listings</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 1rem 1.5rem; }
+    h1 { margin-bottom: .25rem; }
+    .back { font-size: .875rem; color: #6c757d; }
+    .empty { color: #666; font-style: italic; }
+    .sw-table { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 1rem; }
+    .sw-table th { text-align: left; padding: .25rem .5rem; border-bottom: 2px solid #dee2e6; }
+    .sw-table td { padding: .3rem .5rem; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+    .sw-actions { display: flex; gap: .5rem; }
+    .btn-accept { padding: .2rem .7rem; background: #198754; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: .8rem; }
+    .btn-reject { padding: .2rem .7rem; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: .8rem; }
+  </style>
+</head>
+<body>
+  <h1>Weight Suggestions</h1>
+  <p class="back"><a href="/">&larr; Back to listings</a> &nbsp;|&nbsp; ${feedbackCount} feedback record${feedbackCount !== 1 ? 's' : ''} collected (minimum: ${minCount})</p>
+  ${body}
+</body>
+</html>`;
 }
 
 export function renderListingsPage(data: ListingsPageData): string {
@@ -178,13 +302,40 @@ export function renderListingsPage(data: ListingsPageData): string {
     .filter-bar button { padding: .35rem .9rem; background: #0d6efd; color: white; border: none; border-radius: 4px; font-size: .875rem; cursor: pointer; }
     .filter-bar button:hover { background: #0b5ed7; }
     .filter-bar__clear { font-size: .875rem; color: #6c757d; }
+    .evidence { margin-top: .75rem; }
+    .evidence__summary { font-size: .8rem; color: #6c757d; cursor: pointer; }
+    .evidence__summary:hover { color: #0d6efd; }
+    .evidence__table { width: 100%; border-collapse: collapse; font-size: .8rem; margin-top: .5rem; }
+    .evidence__table th { text-align: left; padding: .25rem .4rem; border-bottom: 2px solid #dee2e6; color: #555; }
+    .evidence__table td { padding: .2rem .4rem; border-bottom: 1px solid #f0f0f0; }
+    .ev--match { background: #f0fff4; }
+    .ev--miss { background: #fff8f8; color: #888; }
+    .ev__icon { text-align: center; font-weight: bold; }
+    .ev--match .ev__icon { color: #198754; }
+    .ev--miss .ev__icon { color: #dc3545; }
+    .ev__num { text-align: right; font-variant-numeric: tabular-nums; }
+    .feedback { display: flex; align-items: center; gap: .4rem; margin-top: .75rem; padding-top: .5rem; border-top: 1px solid #f0f0f0; }
+    .feedback__label { font-size: .8rem; color: #888; }
+    .feedback__btn { background: none; border: 1px solid #dee2e6; border-radius: 4px; padding: .15rem .4rem; cursor: pointer; font-size: .9rem; }
+    .feedback__btn:hover { background: #f8f9fa; }
+    .suggest-link { font-size: .875rem; color: #6c757d; margin-left: auto; }
+    .suggest-weights { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; }
+    .sw-table { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: .75rem; }
+    .sw-table th { text-align: left; padding: .25rem .5rem; border-bottom: 2px solid #dee2e6; }
+    .sw-table td { padding: .3rem .5rem; border-bottom: 1px solid #f0f0f0; }
+    .sw-actions { display: flex; gap: .5rem; }
+    .btn-accept { padding: .2rem .7rem; background: #198754; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: .8rem; }
+    .btn-reject { padding: .2rem .7rem; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: .8rem; }
   </style>
 </head>
 <body>
   <h1>Plane Listings</h1>
   ${scanMeta}
   ${renderErrorBanner(scanErrors)}
-  ${renderFilterBar(filters)}
+  <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+    ${renderFilterBar(filters)}
+    <a class="suggest-link" href="/suggest-weights">Suggest weight adjustments</a>
+  </div>
   <main>
     ${renderBody(data)}
   </main>

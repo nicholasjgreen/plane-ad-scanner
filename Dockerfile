@@ -10,9 +10,11 @@ RUN npm ci
 COPY tsconfig.json vitest.config.ts eslint.config.js .prettierrc ./
 COPY src/ ./src/
 COPY tests/ ./tests/
+COPY profiles/ ./profiles/
 
-# Runtime data directory
+# Runtime data directory (airports.csv committed to git)
 RUN mkdir -p data
+COPY data/airports.csv ./data/airports.csv
 
 EXPOSE 3000
 
