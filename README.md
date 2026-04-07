@@ -39,6 +39,87 @@ profile, and serves them via a local web UI.
 
 ---
 
+## Interest profiles
+
+Profiles live in the `profiles/` directory. Each profile is a YAML file describing what you are
+looking for and how much weight to give each criterion. Listings are scored against every active
+profile; the overall score is a weighted average across profiles.
+
+### Creating a profile
+
+Copy the example and edit it:
+
+```bash
+cp profiles/example-ifr-touring.yml profiles/my-search.yml
+```
+
+```yaml
+name: "VFR Tourer"
+weight: 1.0
+description: "Affordable VFR touring aircraft in the UK"
+min_score: 10          # hide listings that score below this threshold
+criteria:
+  - type: make_model
+    make: "Cessna"
+    model: "*"         # wildcard — any Cessna
+    weight: 2.0
+  - type: price_range
+    min: 20000
+    max: 60000
+    weight: 2.0
+  - type: year_range
+    yearMin: 1980
+    weight: 0.5
+  - type: proximity
+    maxDistanceKm: 150
+    weight: 1.0        # requires home_location in config.yml
+```
+
+### Profile criterion types
+
+| Type | What it matches |
+|------|----------------|
+| `make_model` | Manufacturer and/or model; `*` as wildcard |
+| `price_range` | Asking price within `min`/`max` |
+| `year_range` | Year of manufacture within `yearMin`/`yearMax` |
+| `listing_type` | `full_ownership`, `share`, or `any` |
+| `proximity` | Distance from `home_location` to the aircraft's airfield |
+| `mission_type` | AI-assessed suitability for a described capability (e.g. "IFR avionics") |
+
+Set `weight: 0` to disable a profile without deleting it.
+
+### Proximity criterion
+
+To use `proximity`, set your home location in `config.yml`:
+
+```yaml
+home_location:
+  lat: 53.97   # Doncaster
+  lon: -1.11
+```
+
+Aircraft airfields are resolved from their ICAO code (e.g. `EGCC`) using a bundled airport
+database. Distance is calculated as the crow flies.
+
+### Re-scoring without a full scan
+
+After editing a profile you can update scores immediately without re-scraping:
+
+```bash
+docker compose run --rm rescore
+```
+
+This reads every listing from the database, runs the scorer against the current profiles, and writes updated `match_score` values. The web page reflects the new order on the next reload.
+
+### Evidence and scoring
+
+Each listing card shows which criteria matched and which didn't, and how much each contributed
+to the score. Use the **👍 / 👌 / 👎** buttons to rate listings — after a few ratings the
+**Suggest weights** page (`/suggest-weights`) proposes weight adjustments based on your feedback.
+Accept or reject suggestions individually; accepted changes are written back to the profile YAML.
+
+---
+
 ## Site management (admin panel)
 
 All site configuration is done through the admin panel at `/admin`. No need to edit `config.yml`
@@ -208,6 +289,6 @@ data/           # SQLite database (gitignored; created on first run)
 | Feature | Description | Status |
 |---------|-------------|--------|
 | 001 | Plane listing scanner (scrape, deduplicate, score, display) | ✅ Complete |
-| 002 | Interest profiles | Planned |
+| 002 | Interest profiles (YAML-based scoring, proximity, evidence, feedback, weight suggestions) | ✅ Complete |
 | 003 | Site discovery and management (admin UI, verification, Ollama backend) | ✅ Complete |
 | 004 | Listing presentation (AI headlines) | Planned |

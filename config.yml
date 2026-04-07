@@ -19,6 +19,7 @@ ollama:
   #url: "http://localhost:11434"               # running outside Docker
   verification_model: "qwen3:8b"
   scraper_model: "qwen3:8b"
+  scoring_model: "qwen3:8b"
 
 agent:
   token_budget_per_run: 50000   # Max tokens across all agents in one scan run

@@ -8,6 +8,8 @@ services:
       - ./data:/app/data
       # User-supplied config (must exist before starting)
       - ./config.yml:/app/config.yml:ro
+      # Interest profiles (live-reloaded by docker compose watch)
+      - ./profiles:/app/profiles:ro
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
@@ -19,10 +21,13 @@ services:
         - action: sync+restart
           path: ./src
           target: /app/src
-        # Restart when config changes (config is read at startup)
+        # Restart when config or profiles change (read at startup)
         - action: sync+restart
           path: ./config.yml
           target: /app/config.yml
+        - action: sync+restart
+          path: ./profiles
+          target: /app/profiles
         # Full rebuild only when dependencies change
         - action: rebuild
           path: package.json
@@ -36,11 +41,26 @@ services:
     volumes:
       - ./data:/app/data
       - ./config.yml:/app/config.yml:ro
+      - ./profiles:/app/profiles:ro
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     profiles:
       - scan
+
+  # Re-score all existing listings against current profiles (docker compose run --rm rescore)
+  rescore:
+    build: .
+    command: npm run rescore
+    volumes:
+      - ./data:/app/data
+      - ./config.yml:/app/config.yml:ro
+      - ./profiles:/app/profiles:ro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    profiles:
+      - rescore
 
   # Web server only, no scheduler (docker compose run serve)
   serve:

@@ -427,8 +427,16 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   const ollamaScraperModel =
     config.ollama?.scraper_model ?? config.ollama?.verification_model;
+
+  const scoringClient: Anthropic | OpenAI | null = config.ollama?.scoring_model
+    ? new OpenAI({ baseURL: `${config.ollama.url}/v1`, apiKey: 'ollama' })
+    : anthropic;
+  const scoringModel = config.ollama?.scoring_model ?? 'claude-haiku-4-5-20251001';
+
   const scanDeps = {
     ...(ollamaClient && ollamaScraperModel ? { ollamaClient, ollamaScraperModel } : {}),
+    scoringClient,
+    scoringModel,
     profiles,
   };
 

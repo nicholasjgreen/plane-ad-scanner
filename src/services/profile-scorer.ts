@@ -1,9 +1,9 @@
 // Profile-based listing scorer.
 // Pure function — no I/O, no side effects.
-// mission_type returns 0 (AI evaluation not implemented).
 
 import type Database from 'better-sqlite3';
 import type { ListingForScoring, InterestProfile, ProfileCriterion, ProfileScore, EvidenceItem } from '../types.js';
+import type { MissionTypeResult } from './mission-type-evaluator.js';
 import { proximityScore } from './icao.js';
 
 // ---------------------------------------------------------------------------
@@ -22,6 +22,8 @@ interface EvalContext {
   homeLat?: number;
   homeLon?: number;
   db?: Database.Database;
+  /** Pre-evaluated mission_type results keyed by criterion intent string */
+  missionTypeOverrides?: Map<string, MissionTypeResult>;
 }
 
 function evalCriterion(listing: ListingForScoring, crit: ProfileCriterion, ctx: EvalContext = {}): CriterionResult {
@@ -115,7 +117,14 @@ function evalCriterion(listing: ListingForScoring, crit: ProfileCriterion, ctx: 
     }
 
     case 'mission_type': {
-      // Requires AI evaluation — returns 0 with note.
+      const override = crit.intent ? ctx.missionTypeOverrides?.get(crit.intent) : undefined;
+      if (override) {
+        return {
+          matched: override.matched,
+          note: override.note ?? '',
+          confidence: override.confidence,
+        };
+      }
       return {
         matched: false,
         note: `Mission type "${crit.intent}" requires AI evaluation — not yet implemented`,
@@ -190,7 +199,8 @@ export function scoreListingAgainstProfiles(
   listing: ListingForScoring,
   profiles: InterestProfile[],
   homeLocation?: { lat: number; lon: number } | null,
-  db?: Database.Database
+  db?: Database.Database,
+  missionTypeOverrides?: Map<string, MissionTypeResult>
 ): ProfileScoringResult {
   const activeProfiles = profiles.filter((p) => p.weight > 0);
   if (activeProfiles.length === 0) {
@@ -200,6 +210,7 @@ export function scoreListingAgainstProfiles(
   const ctx: EvalContext = {
     ...(homeLocation ? { homeLat: homeLocation.lat, homeLon: homeLocation.lon } : {}),
     db,
+    missionTypeOverrides,
   };
 
   const profileScores = activeProfiles.map((p) => scoreAgainstProfile(listing, p, ctx));

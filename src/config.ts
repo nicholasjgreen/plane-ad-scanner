@@ -73,6 +73,7 @@ const ConfigSchema = z
         url: z.string().url().default('http://localhost:11434'),
         verification_model: z.string().min(1).optional(),
         scraper_model: z.string().min(1).optional(),
+        scoring_model: z.string().min(1).optional(),
       })
       .nullable()
       .default(null),

@@ -26,9 +26,11 @@ export interface OrchestratorDeps {
     siteName: string,
     scanStartedAt: string
   ) => Promise<HistorianResult>;
-  matcher?: (listings: ListingForScoring[], criteria: Criterion[], profiles?: InterestProfile[], db?: Database.Database, homeLocation?: { lat: number; lon: number } | null) => Promise<MatcherOutput>;
+  matcher?: (listings: ListingForScoring[], criteria: Criterion[], profiles?: InterestProfile[], db?: Database.Database, homeLocation?: { lat: number; lon: number } | null, scoringClient?: Anthropic | OpenAI | null, scoringModel?: string | null) => Promise<MatcherOutput>;
   ollamaClient?: OpenAI;
   ollamaScraperModel?: string;
+  scoringClient?: Anthropic | OpenAI | null;
+  scoringModel?: string | null;
   profiles?: InterestProfile[];
 }
 
@@ -182,7 +184,7 @@ export async function runScan(
         .map(toListingForScoring);
 
       if (rows.length > 0) {
-        const matcherOut = await matcherFn(rows, config.criteria, profiles, db, config.home_location);
+        const matcherOut = await matcherFn(rows, config.criteria, profiles, db, config.home_location, deps.scoringClient, deps.scoringModel);
         if (matcherOut.scores.length > 0) {
           const upd = db.prepare('UPDATE listings SET match_score = ? WHERE id = ?');
           db.transaction(() => {

@@ -16,8 +16,8 @@ criteria:
     max: 100000
     weight: 2.0
   - type: year_range
-    yearMin: 1990
-    yearMax: 2025
+    yearMin: 1970
+    yearMax: 2027
     weight: 0.5
   - type: listing_type
     listingType: "full_ownership"

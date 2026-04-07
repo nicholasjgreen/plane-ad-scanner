@@ -220,6 +220,34 @@ Task: "Update src/cli/scan.ts (T013)"             ← parallel with T010–T012
 
 ---
 
+## Phase 9: User Story 6 — AI Evaluation of Mission-Type Criteria
+
+**Goal**: `mission_type` criteria are evaluated by the Anthropic API rather than always returning 0. For each listing × mission_type criterion, a single Haiku call judges whether the aircraft satisfies the stated intent and sub-criteria, returning a matched flag, confidence level, and a human-readable note. Results flow through to the evidence table and update `listing_scores`.
+
+**Independent Test**: Create a profile with one `mission_type` criterion (`intent: "IFR certified avionics suite"`). Run rescore against a seeded listing with `aircraftType = "Piper PA-28 Arrow IFR"`. Confirm `listing_scores.evidence` JSON shows `matched: true`, `confidence` is one of `high/medium/low` (not null), and the note is non-empty.
+
+### Tests for User Story 6 ⚠️ TDD — write FIRST, confirm FAIL before implementing
+
+- [X] T032 [US6] Write failing tests in `tests/unit/mission-type-evaluator.test.ts` covering both client types: (a) Anthropic path — mock `@anthropic-ai/sdk` `messages.create`; confirm `{ matched: true, confidence: "high", note: "..." }` is parsed and returned; (b) Ollama path — mock `openai` `chat.completions.create`; confirm same result shape; (c) either client throws → evaluator returns `{ matched: false, confidence: null, note: "AI evaluation failed: <message>" }` without rethrowing; (d) confirm prompt sent to either client includes `criterion.intent`, all `criterion.sub_criteria`, and the listing's `aircraftType`/`make`/`model` — **run tests and confirm FAIL**
+
+### Implementation for User Story 6
+
+- [X] T033 [US6] Add `scoring_model` field to the `ollama` object in `src/config.ts` `ConfigSchema` — `z.string().min(1).optional()` — falls back to `verification_model` if absent; update `config.yml.example` with a commented-out `scoring_model: "qwen2.5:7b"` line under `ollama:`
+
+- [X] T034 [US6] Create `src/services/mission-type-evaluator.ts`: export `MissionTypeResult = { matched: boolean; confidence: 'high' | 'medium' | 'low' | null; note: string }` and `async function evaluateMissionType(listing: ListingForScoring, criterion: { intent: string; sub_criteria: string[] }, client: Anthropic | OpenAI, model: string, maxTokens?: number): Promise<MissionTypeResult>` — detect client type by checking `client instanceof Anthropic`; both paths use the same JSON prompt (`intent`, `sub_criteria`, listing `aircraftType`/`make`/`model`); parse `{ matched, confidence, note }` from the response text; on any error return `{ matched: false, confidence: null, note: "AI evaluation failed: <message>" }` — **make T032 tests pass**
+
+- [X] T035 [US6] Update `src/services/profile-scorer.ts`: add optional `missionTypeOverrides?: Map<string, MissionTypeResult>` parameter to `scoreListingAgainstProfiles` (key = `"${profileName}|${criterionIndex}"`); in the `mission_type` case of `evalCriterion`, look up the overrides map first and use it when present; fall back to the existing stub when absent; import `MissionTypeResult` from `mission-type-evaluator.ts`
+
+- [X] T036 [US6] Update `src/agents/matcher.ts`: accept an optional `scoringClient?: Anthropic | OpenAI` and `scoringModel?: string` in the matcher's parameters (or derive from `deps`); before calling `scoreListingAgainstProfiles` for each listing, iterate active profiles and collect `mission_type` criteria; call `evaluateMissionType` for each `(listing, criterion)` pair when a `scoringClient` is available; build `missionTypeOverrides` map keyed by `"${profile.name}|${criterionIndex}"`; pass map to scorer; if no `scoringClient`, map is empty and scorer falls back to stub
+
+- [X] T037 [US6] Update `src/cli/rescore.ts` and `src/cli/scan.ts`: construct Ollama `OpenAI` client from `config.ollama` when `config.ollama.scoring_model` (or `verification_model`) is set, otherwise use the existing Anthropic client; pass `scoringClient` and `scoringModel` into the matcher deps
+
+- [X] T038 [P] [US6] Run `docker compose run --rm app npm test && docker compose run --rm app npm run build` — fix any type errors or test failures introduced by T034–T037
+
+**Checkpoint**: With Ollama configured (`scoring_model: "qwen2.5:7b"`), run `npm run rescore`. Confirm `mission_type` evidence items show real `confidence` values. Switch to Anthropic (remove `ollama:` from config), run again, confirm same evidence shape. Check `listing_scores` in DB for updated evidence JSON in both cases.
+
+---
+
 ## Summary
 
 | Phase | User Story | Tasks | TDD? |
@@ -232,8 +260,9 @@ Task: "Update src/cli/scan.ts (T013)"             ← parallel with T010–T012
 | 6 | US4 Proximity (P4) | T019–T022 | Yes (T019–T020) |
 | 7 | US5 Feedback (P5) | T023–T028 | No |
 | 8 | Polish | T029–T031 | No |
+| 9 | US6 Mission-type AI scoring (Anthropic + Ollama) | T032–T038 | Yes (T032, T034) |
 
-**Total tasks**: 31  
-**TDD tasks**: 4 (T008, T009, T019, T020)  
-**Parallelizable tasks**: T001–T003, T004–T007, T010–T013, T017–T018, T023+T025  
+**Total tasks**: 38  
+**TDD tasks**: 6 (T008, T009, T019, T020, T032, T034)  
+**Parallelizable tasks**: T001–T003, T004–T007, T010–T013, T017–T018, T023+T025, T038  
 **MVP scope**: Phases 1–3 (T001–T013, 13 tasks)
