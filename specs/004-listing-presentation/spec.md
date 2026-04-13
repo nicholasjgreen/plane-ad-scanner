@@ -17,6 +17,13 @@
 - Q: When a user updates an interest profile, when does explanation regeneration happen? → A: At the next scheduled scan — regeneration happens as part of the normal scan cycle.
 - Q: When insufficient data exists to generate a meaningful headline, what should be shown? → A: Construct a minimal headline from whatever is available (e.g. site name and price).
 
+### Session 2026-04-13
+
+- Q: How should the expanded view open? → A: In-place accordion — the card expands inline on the same page; full details (explanation, structured evidence, all images) appear below the summary row. No separate route or modal required.
+- Q: How are listing images stored by the system? → A: Store scraped image URLs only — rendered via `<img src="...">` pointing to the original source. No local downloading or file serving required.
+- Q: Which listings get explanation regeneration at each scan? → A: Only listings found in the current scan (new + updated). Old listings keep their existing explanation unless the user triggers on-demand regeneration via a per-listing "Re-score" button in the expanded view.
+- Q: What is the minimum acceptable explanation when few or no profile criteria match? → A: Always generate a full natural-language explanation regardless of match quality; brevity is acceptable and no minimum length is enforced. A low-match listing still warrants a genuine explanation of what it offers and where it falls short.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Scan Listings as Informative Cards (Priority: P1)
@@ -86,7 +93,7 @@ As a buyer whose interests evolve over time, I want the plain-English explanatio
 ### Edge Cases
 
 - When listing data is sparse (e.g. only a price and a URL), the headline is constructed from whatever is available — at minimum the source site name and asking price (e.g. "Aircraft for sale on Trade-A-Plane — £45,000"). A generic placeholder is not acceptable.
-- What if the interest profile explanation would be very short because very few criteria match — is a minimal explanation acceptable, or should it always reach a minimum length?
+- When very few or no profile criteria match, a brief honest explanation is still generated (e.g. "This aircraft falls outside your stated budget and type preferences, but is a low-hours example in reasonable condition"). No minimum length is enforced; brevity is acceptable.
 - What if images on the source site are behind authentication or have since been removed — how are broken images handled?
 - What if two listings from different sites are for the same aircraft — do they get the same explanation and headline?
 - How should the explanation handle attributes that are absent from the listing (e.g. no avionics information scraped) without inventing facts?
@@ -104,7 +111,8 @@ As a buyer whose interests evolve over time, I want the plain-English explanatio
 - **FR-007**: The explanation MUST be available in the expanded view of a listing card and MUST NOT require navigation away from the tool.
 - **FR-008**: The expanded view MUST display all available images from the listing in a browsable format.
 - **FR-009**: The expanded view MUST include a direct link to the original listing on the source site.
-- **FR-010**: Explanations MUST be regenerated at the next scheduled scan after the user's active interest profiles change. No immediate background regeneration is required; the previous explanation remains visible in the interim.
+- **FR-010**: At each scan, explanations MUST be regenerated only for listings found in that scan (new or updated listings). Listings not touched by the scan retain their existing explanation unchanged.
+- **FR-010a**: The expanded view MUST include a "Re-score" button that triggers on-demand regeneration of the explanation and match score for that single listing against the current interest profiles. The button MUST be visible regardless of when the listing was last scanned.
 - **FR-011**: While explanation regeneration is in progress, the previous explanation MUST remain visible. If no previous explanation exists and generation fails, a neutral placeholder MUST be shown (e.g. "Summary not yet available for this listing") rather than a blank or error state.
 - **FR-012**: The explanation MUST honestly represent partial matches, noting both strengths and gaps relative to the user's stated interests.
 - **FR-013**: The expanded view MUST display the structured evidence from feature 002 below the plain-English explanation — showing each criterion, whether it matched, its score contribution, and any inference confidence notes.
@@ -128,10 +136,10 @@ As a buyer whose interests evolve over time, I want the plain-English explanatio
 ## Assumptions
 
 - This feature depends on feature 002 (interest profiles) for the interest context used to generate headlines and explanations; if no profiles are defined, a general summary is generated instead.
-- Image thumbnails are sourced from the listing page at scan time and stored by the system; they are not fetched live on page load.
-- If images are no longer accessible at their original URLs, a placeholder is shown; the system does not re-fetch them on demand in v1.
-- The explanation is generated eagerly at scan time for every listing and stored; it is regenerated when interest profiles change but not on every page view. There is no on-demand generation path.
+- Image URLs are scraped from the listing page at scan time and stored in the database (URL strings only — no image bytes are downloaded or served locally). Images are rendered via `<img src="...">` pointing directly to the original source URL.
+- If an image URL is no longer accessible (broken or expired), the browser renders a broken-image indicator; no server-side placeholder substitution is required in v1.
+- Explanations are generated at scan time for listings found in that scan and stored; listings not touched by a scan retain their previous explanation. A per-listing "Re-score" button in the expanded view provides on-demand regeneration for any individual listing at any time.
 - The headline is generated once at scan time from the listing's intrinsic data and is stable thereafter; it is not affected by interest profile updates.
 - Headline and explanation generation is performed by the system's AI matching agent (per the project constitution); prompt engineering and model choice are implementation concerns.
-- The expanded view replaces or overlays the card in the existing web page from feature 001; a separate page per listing is not required in v1.
+- The expanded view is an in-place accordion on the existing listing page from feature 001: clicking a card expands it inline to reveal the explanation, structured evidence, and full image gallery. No separate per-listing route or modal is required in v1.
 - The explanation may be a few sentences to a few paragraphs; no minimum or maximum length is enforced, but brevity is preferred.
