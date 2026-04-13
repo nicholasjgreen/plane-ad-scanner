@@ -10,6 +10,7 @@ Auto-generated from all feature plans. Last updated: 2026-04-13
 - SQLite (`./data/listings.db`) — migration 002 extends existing schema (003-site-discovery-management)
 - TypeScript (strict mode), Node.js LTS v20+ + `@anthropic-ai/sdk` (existing), `better-sqlite3` (existing), `express` (existing) — no new production dependencies (004-listing-presentation)
 - SQLite — migration 004 adds `headline TEXT` + `image_urls TEXT` to `listings`; new `listing_ai` table for explanations (004-listing-presentation)
+- SQLite (`./data/listings.db`) — no migration needed; enriches existing `raw_attributes`, `thumbnail_url`, `all_image_urls` columns (006-full-page-listings)
 
 - TypeScript (strict mode), Node.js LTS + Anthropic Agent SDK (`@anthropic-ai/sdk`); existing web server and DB from feature 001 (004-listing-presentation)
 
@@ -29,9 +30,9 @@ npm test && npm run lint
 TypeScript (strict mode), Node.js LTS: Follow standard conventions
 
 ## Recent Changes
+- 006-full-page-listings: Added TypeScript (strict mode), Node.js LTS v20+ + `@anthropic-ai/sdk` (existing), `better-sqlite3` (existing), `express` (existing) — no new production dependencies
 - 004-listing-presentation: Added TypeScript (strict mode), Node.js LTS v20+ + `@anthropic-ai/sdk` (existing), `better-sqlite3` (existing), `express` (existing) — no new production dependencies
 - 002-interest-profiles: Added [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
-- 003-site-discovery-management: Added TypeScript (strict mode), Node.js LTS v20 + `@anthropic-ai/sdk` v0.39+, `express`, `better-sqlite3`, `zod`, `pino`, `uuid` — all from feature 001; no new production dependencies
 
 
 <!-- MANUAL ADDITIONS START -->
