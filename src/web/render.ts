@@ -27,6 +27,8 @@ export interface ListingRow {
   dateLastSeen: string;
   evidence?: EvidenceRow[];      // Per-criterion breakdown from listing_scores
   headline: string | null;       // AI-generated headline; null until Presenter runs
+  explanation: string | null;    // AI-generated interest explanation; null until ready
+  aiStatus: 'pending' | 'ready' | 'failed' | null;  // null = no listing_ai row yet
   thumbnailUrl: string | null;   // First scraped image URL; null if none found
   allImageUrls: string[];        // All scraped image URLs for the gallery
 }
@@ -130,6 +132,25 @@ function renderEvidence(evidence: EvidenceRow[]): string {
     </details>`;
 }
 
+function renderExplanation(
+  explanation: string | null,
+  aiStatus: 'pending' | 'ready' | 'failed' | null
+): string {
+  if (aiStatus === 'ready' && explanation) {
+    return `<p class="explanation">${esc(explanation)}</p>`;
+  }
+  if (aiStatus === 'pending') {
+    return `<p class="explanation explanation--pending">Summary is being generated…</p>`;
+  }
+  if (aiStatus === 'failed') {
+    const stale = explanation
+      ? `<p class="explanation explanation--stale">${esc(explanation)}</p>`
+      : '';
+    return `${stale}<p class="explanation explanation--failed">Summary not yet available for this listing.</p>`;
+  }
+  return '';
+}
+
 function renderThumbnail(thumbnailUrl: string | null): string {
   if (thumbnailUrl) {
     return `<img class="listing__thumbnail" src="${esc(thumbnailUrl)}" alt="" loading="lazy">`;
@@ -163,14 +184,22 @@ function renderListing(l: ListingRow): string {
         <span class="listing__score" title="Match score">${l.matchScore.toFixed(1)}</span>
       </summary>
       <div class="listing__body">
+        ${renderExplanation(l.explanation, l.aiStatus)}
         <dl class="listing__details">
           <dt>Price</dt>    <dd>${fmtPrice(l.price, l.priceCurrency)}</dd>
           <dt>Year</dt>     <dd>${l.year ?? '—'}</dd>
           <dt>Location</dt> <dd>${esc(l.location) || '—'}</dd>
-          <dt>Source</dt>   <dd><a href="${esc(l.listingUrl)}" target="_blank" rel="noopener">${esc(l.sourceSite)}</a></dd>
+          <dt>Source</dt>   <dd>${esc(l.sourceSite)}</dd>
           <dt>First seen</dt><dd>${fmtDate(l.dateFirstFound)}</dd>
         </dl>
         ${l.evidence && l.evidence.length > 0 ? renderEvidence(l.evidence) : ''}
+        <div class="listing__actions">
+          <a class="listing__source-link" href="${esc(l.listingUrl)}" target="_blank" rel="noopener">View original listing →</a>
+          <form class="rescore-form" method="post" action="/rescore">
+            <input type="hidden" name="listing_id" value="${esc(l.id)}">
+            <button class="btn-rescore" type="submit" title="Regenerate AI summary for this listing">Re-score</button>
+          </form>
+        </div>
         <form class="feedback" method="post" action="/feedback">
           <input type="hidden" name="listing_id" value="${esc(l.id)}">
           <span class="feedback__label">Rate this listing:</span>
@@ -341,6 +370,16 @@ export function renderListingsPage(data: ListingsPageData): string {
     .ev--match .ev__icon { color: #198754; }
     .ev--miss .ev__icon { color: #dc3545; }
     .ev__num { text-align: right; font-variant-numeric: tabular-nums; }
+    .explanation { font-size: .9rem; color: #333; margin: 0 0 .75rem; line-height: 1.5; }
+    .explanation--pending { color: #888; font-style: italic; }
+    .explanation--stale { color: #555; margin-bottom: .25rem; }
+    .explanation--failed { color: #888; font-style: italic; font-size: .8rem; }
+    .listing__actions { display: flex; align-items: center; gap: 1rem; margin-bottom: .75rem; }
+    .listing__source-link { font-size: .875rem; color: #0d6efd; text-decoration: none; }
+    .listing__source-link:hover { text-decoration: underline; }
+    .rescore-form { margin: 0; }
+    .btn-rescore { padding: .2rem .7rem; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: .8rem; }
+    .btn-rescore:hover { background: #5c636a; }
     .feedback { display: flex; align-items: center; gap: .4rem; margin-top: .75rem; padding-top: .5rem; border-top: 1px solid #f0f0f0; }
     .feedback__label { font-size: .8rem; color: #888; }
     .feedback__btn { background: none; border: 1px solid #dee2e6; border-radius: 4px; padding: .15rem .4rem; cursor: pointer; font-size: .9rem; }

@@ -8,13 +8,15 @@ import Database from 'better-sqlite3';
 import cron from 'node-cron';
 import { renderListingsPage, renderSuggestWeightsPage } from './render.js';
 import type { ListingRow, LastScanInfo, ScanError, ListingsPageData, ActiveFilters, EvidenceRow, SuggestWeightsPageData } from './render.js';
+import { runPresenter } from '../agents/presenter.js';
+import { setStatusReady, setStatusFailed } from '../db/listing-ai.js';
 import { logger, loadConfig } from '../config.js';
 import { initDb } from '../db/index.js';
 import { runScan } from '../agents/orchestrator.js';
 import { createAdminRouter } from '../admin/routes.js';
 import type { AdminRouterDeps } from '../admin/routes.js';
 import { runWeightSuggester } from '../agents/weight-suggester.js';
-import type { InterestProfile, FeedbackRecord } from '../types.js';
+import type { InterestProfile, FeedbackRecord, PresenterInput } from '../types.js';
 import type { Config } from '../config.js';
 import { randomUUID } from 'node:crypto';
 import yaml from 'js-yaml';
@@ -39,7 +41,9 @@ interface DbListingRow {
   date_last_seen: string;
   thumbnail_url: string | null;
   all_image_urls: string | null;  // JSON: string[]
-  ai_headline: string | null;     // from listing_ai via LEFT JOIN
+  ai_headline: string | null;      // from listing_ai via LEFT JOIN
+  ai_explanation: string | null;   // from listing_ai via LEFT JOIN
+  ai_status: string | null;        // from listing_ai via LEFT JOIN
 }
 
 interface DbScanRun {
@@ -79,6 +83,8 @@ function toListingRow(r: DbListingRow): ListingRow {
     dateFirstFound: r.date_first_found,
     dateLastSeen: r.date_last_seen,
     headline: r.ai_headline,
+    explanation: r.ai_explanation,
+    aiStatus: (r.ai_status as ListingRow['aiStatus']) ?? null,
     thumbnailUrl: r.thumbnail_url,
     allImageUrls,
   };
@@ -90,6 +96,7 @@ interface AppDeps {
   config?: Config;
   profiles?: InterestProfile[];
   profilesDir?: string;
+  presenter?: (input: PresenterInput, anthropic: Anthropic, model: string) => Promise<import('../types.js').PresenterOutput>;
 }
 
 export function createApp(db: Database.Database, adminDeps: AdminRouterDeps = {}, appDeps: AppDeps = {}): Application {
@@ -125,7 +132,7 @@ export function createApp(db: Database.Database, adminDeps: AdminRouterDeps = {}
     const listings = (
       db
         .prepare(
-          `SELECT l.*, lai.headline AS ai_headline
+          `SELECT l.*, lai.headline AS ai_headline, lai.explanation AS ai_explanation, lai.status AS ai_status
            FROM listings l
            LEFT JOIN listing_ai lai ON lai.listing_id = l.id
            ${where}
@@ -234,6 +241,63 @@ export function createApp(db: Database.Database, adminDeps: AdminRouterDeps = {}
       `INSERT INTO listing_feedback (id, listing_id, rating, weights_snapshot, created_at)
        VALUES (?, ?, ?, ?, ?)`
     ).run(randomUUID(), listing_id, rating, weightsSnapshot, new Date().toISOString());
+
+    res.redirect('/');
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /rescore — regenerate AI headline/explanation for a listing (PRG)
+  // -------------------------------------------------------------------------
+  app.post('/rescore', async (req, res) => {
+    const { listing_id } = req.body as { listing_id?: string };
+    if (!listing_id) { res.redirect('/'); return; }
+
+    interface DbRescoreRow {
+      id: string; make: string | null; model: string | null; year: number | null;
+      price: number | null; price_currency: string; location: string | null;
+      source_site: string; raw_attributes: string | null;
+    }
+    const row = db.prepare(
+      `SELECT id, make, model, year, price, price_currency, location, source_site, raw_attributes
+       FROM listings WHERE id = ?`
+    ).get(listing_id) as DbRescoreRow | undefined;
+
+    if (!row) { res.redirect('/'); return; }
+
+    const anthropicClient = appDeps.anthropic ?? new Anthropic();
+    const config = appDeps.config;
+    const presenterModel = config?.agent?.matcher_model ?? 'claude-sonnet-4-6';
+    const profiles = appDeps.profiles ?? [];
+
+    const input: PresenterInput = {
+      listing: {
+        id: row.id,
+        make: row.make,
+        model: row.model,
+        year: row.year,
+        price: row.price,
+        priceCurrency: row.price_currency,
+        location: row.location,
+        sourceSite: row.source_site,
+        attributes: JSON.parse(row.raw_attributes ?? '{}') as Record<string, string>,
+      },
+      profiles,
+    };
+
+    const presenterFn = appDeps.presenter ?? runPresenter;
+
+    try {
+      const output = await presenterFn(input, anthropicClient, presenterModel);
+      setStatusReady(db, listing_id, {
+        headline: output.headline,
+        explanation: output.explanation,
+        modelVer: '',
+      });
+      logger.info({ listingId: listing_id }, 'Rescore: done');
+    } catch (err) {
+      logger.error({ listingId: listing_id, err }, 'Rescore: presenter failed');
+      setStatusFailed(db, listing_id);
+    }
 
     res.redirect('/');
   });
