@@ -1,6 +1,10 @@
 # SQLite database (runtime data)
 data/listings.db
 
+# User profiles (load at runtime; only example profiles are tracked)
+profiles/*.yml
+!profiles/example-*.yml
+
 # Logs
 logs
 *.log
