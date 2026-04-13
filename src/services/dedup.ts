@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import type { RawListing } from '../types.js';
+import { upsertListingAi, markListingAiStale } from '../db/listing-ai.js';
 
 export interface DedupResult {
   id: string;
@@ -24,6 +25,10 @@ export function upsertListing(
       .get(listing.registration) as { id: string } | undefined;
 
     if (existing) {
+      const thumbnailUrl = listing.imageUrls?.[0] ?? null;
+      const allImageUrls = listing.imageUrls && listing.imageUrls.length > 0
+        ? JSON.stringify(listing.imageUrls)
+        : null;
       db.prepare(`
         UPDATE listings SET
           date_last_seen  = ?,
@@ -35,7 +40,9 @@ export function upsertListing(
           model           = COALESCE(?, model),
           year            = COALESCE(?, year),
           listing_url     = ?,
-          raw_attributes  = ?
+          raw_attributes  = ?,
+          thumbnail_url   = COALESCE(?, thumbnail_url),
+          all_image_urls  = COALESCE(?, all_image_urls)
         WHERE registration = ?
       `).run(
         scanStartedAt,
@@ -47,20 +54,29 @@ export function upsertListing(
         listing.year ?? null,
         listing.listingUrl,
         JSON.stringify(listing.attributes),
+        thumbnailUrl,
+        allImageUrls,
         listing.registration
       );
+      // Mark the existing AI content stale so the explanation is regenerated
+      markListingAiStale(db, existing.id);
       return { id: existing.id, isNew: false };
     }
   }
 
   // No match — insert new row
   const id = randomUUID();
+  const thumbnailUrl = listing.imageUrls?.[0] ?? null;
+  const allImageUrls = listing.imageUrls && listing.imageUrls.length > 0
+    ? JSON.stringify(listing.imageUrls)
+    : null;
   db.prepare(`
     INSERT INTO listings (
       id, registration, aircraft_type, make, model, year, price, price_currency,
       location, listing_url, source_site, match_score, is_new,
-      date_first_found, date_last_seen, raw_attributes
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?)
+      date_first_found, date_last_seen, raw_attributes,
+      thumbnail_url, all_image_urls
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?)
   `).run(
     id,
     listing.registration ?? null,
@@ -75,8 +91,13 @@ export function upsertListing(
     sourceSite,
     scanStartedAt,
     scanStartedAt,
-    JSON.stringify(listing.attributes)
+    JSON.stringify(listing.attributes),
+    thumbnailUrl,
+    allImageUrls
   );
+
+  // Create a pending listing_ai row so the Presenter knows to generate content
+  upsertListingAi(db, id);
 
   return { id, isNew: true };
 }

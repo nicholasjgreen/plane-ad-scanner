@@ -37,6 +37,9 @@ interface DbListingRow {
   is_new: number;
   date_first_found: string;
   date_last_seen: string;
+  thumbnail_url: string | null;
+  all_image_urls: string | null;  // JSON: string[]
+  ai_headline: string | null;     // from listing_ai via LEFT JOIN
 }
 
 interface DbScanRun {
@@ -53,6 +56,12 @@ interface DbListingScore {
 }
 
 function toListingRow(r: DbListingRow): ListingRow {
+  let allImageUrls: string[] = [];
+  if (r.all_image_urls) {
+    try {
+      allImageUrls = JSON.parse(r.all_image_urls) as string[];
+    } catch { /* ignore malformed JSON */ }
+  }
   return {
     id: r.id,
     registration: r.registration,
@@ -69,6 +78,9 @@ function toListingRow(r: DbListingRow): ListingRow {
     isNew: r.is_new === 1,
     dateFirstFound: r.date_first_found,
     dateLastSeen: r.date_last_seen,
+    headline: r.ai_headline,
+    thumbnailUrl: r.thumbnail_url,
+    allImageUrls,
   };
 }
 
@@ -113,7 +125,11 @@ export function createApp(db: Database.Database, adminDeps: AdminRouterDeps = {}
     const listings = (
       db
         .prepare(
-          `SELECT * FROM listings ${where} ORDER BY match_score DESC, date_first_found DESC`
+          `SELECT l.*, lai.headline AS ai_headline
+           FROM listings l
+           LEFT JOIN listing_ai lai ON lai.listing_id = l.id
+           ${where}
+           ORDER BY l.match_score DESC, l.date_first_found DESC`
         )
         .all(...params) as DbListingRow[]
     ).map(toListingRow);

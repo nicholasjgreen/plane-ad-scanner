@@ -12,6 +12,33 @@ export interface RawListing {
   priceCurrency?: string;
   location?: string;
   attributes: Record<string, string>;
+  imageUrls?: string[];  // All image URLs scraped from the listing page; first element is the thumbnail candidate
+}
+
+// ---------------------------------------------------------------------------
+// Feature 004: Presenter agent types
+// ---------------------------------------------------------------------------
+
+export interface PresenterInput {
+  listing: {
+    id: string;
+    make: string | null;
+    model: string | null;
+    year: number | null;
+    price: number | null;
+    priceCurrency: string;
+    location: string | null;
+    sourceSite: string;
+    attributes: Record<string, string>;
+  };
+  profiles: InterestProfile[];  // empty array if no profiles defined
+}
+
+export interface PresenterOutput {
+  listingId: string;
+  headline: string;       // max 60 chars, never empty — fallback to site+price if blank
+  explanation: string;    // never empty — fallback to "No summary available." if blank
+  status: 'ok' | 'partial';  // 'partial' when no profiles or sparse data
 }
 
 export interface ScraperOutput {

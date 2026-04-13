@@ -59,6 +59,7 @@ Return ONLY a JSON array of objects with these fields (omit absent fields):
 - price: number (numeric only, no symbols)
 - priceCurrency: string (default "GBP")
 - location: string
+- imageUrls: array of strings (thumbnail/photo URLs for this listing; relative URLs → prepend ${origin}; omit if none)
 - attributes: object of any other key-value pairs`,
     messages: [{ role: 'user', content: `Extract listings from:\n\n${trimmed}` }],
   });
@@ -95,6 +96,12 @@ Return ONLY a JSON array of objects with these fields (omit absent fields):
               .join(' ')
           );
       if (reg) listing.registration = reg;
+      // Image URLs — extract from LLM output
+      if (Array.isArray(item.imageUrls)) {
+        const urls = (item.imageUrls as unknown[])
+          .filter((u): u is string => typeof u === 'string' && u.length > 0);
+        if (urls.length > 0) listing.imageUrls = urls;
+      }
       return listing;
     });
 }

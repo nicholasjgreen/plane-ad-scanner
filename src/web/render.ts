@@ -25,7 +25,10 @@ export interface ListingRow {
   isNew: boolean;
   dateFirstFound: string;
   dateLastSeen: string;
-  evidence?: EvidenceRow[];  // Per-criterion breakdown from listing_scores
+  evidence?: EvidenceRow[];      // Per-criterion breakdown from listing_scores
+  headline: string | null;       // AI-generated headline; null until Presenter runs
+  thumbnailUrl: string | null;   // First scraped image URL; null if none found
+  allImageUrls: string[];        // All scraped image URLs for the gallery
 }
 
 export interface LastScanInfo {
@@ -127,36 +130,56 @@ function renderEvidence(evidence: EvidenceRow[]): string {
     </details>`;
 }
 
+function renderThumbnail(thumbnailUrl: string | null): string {
+  if (thumbnailUrl) {
+    return `<img class="listing__thumbnail" src="${esc(thumbnailUrl)}" alt="" loading="lazy">`;
+  }
+  return `<div class="thumbnail-placeholder" aria-hidden="true">No photo</div>`;
+}
+
 function renderListing(l: ListingRow): string {
-  const title = [l.aircraftType ?? [l.make, l.model].filter(Boolean).join(' ') ?? 'Unknown aircraft']
-    .join('');
+  // Headline: AI-generated → aircraft type → make+model → site name
+  const headline =
+    l.headline ??
+    l.aircraftType ??
+    ([l.make, l.model].filter(Boolean).join(' ') || `Listing on ${l.sourceSite}`);
+
   const reg = l.registration ? `<span class="reg">${esc(l.registration)}</span>` : '';
   const newBadge = l.isNew ? `<span class="badge badge--new">New</span>` : '';
+
+  // Key facts line: make · model · year · price
+  const facts = [l.make, l.model, l.year ? String(l.year) : null, fmtPrice(l.price, l.priceCurrency)]
+    .filter(Boolean)
+    .join(' · ');
+
   return `
-    <article class="listing${l.isNew ? ' listing--new' : ''}">
-      <header class="listing__header">
-        <h2 class="listing__title">
-          <a href="${esc(l.listingUrl)}" target="_blank" rel="noopener">${esc(title)}</a>
-          ${reg}${newBadge}
-        </h2>
+    <details class="listing${l.isNew ? ' listing--new' : ''}">
+      <summary class="listing__summary">
+        ${renderThumbnail(l.thumbnailUrl)}
+        <div class="listing__summary-text">
+          <div class="listing__headline">${esc(headline)}${reg}${newBadge}</div>
+          <div class="listing__facts">${esc(facts)}</div>
+        </div>
         <span class="listing__score" title="Match score">${l.matchScore.toFixed(1)}</span>
-      </header>
-      <dl class="listing__details">
-        <dt>Price</dt>    <dd>${fmtPrice(l.price, l.priceCurrency)}</dd>
-        <dt>Year</dt>     <dd>${l.year ?? '—'}</dd>
-        <dt>Location</dt> <dd>${esc(l.location) || '—'}</dd>
-        <dt>Source</dt>   <dd>${esc(l.sourceSite)}</dd>
-        <dt>First seen</dt><dd>${fmtDate(l.dateFirstFound)}</dd>
-      </dl>
-      ${l.evidence && l.evidence.length > 0 ? renderEvidence(l.evidence) : ''}
-      <form class="feedback" method="post" action="/feedback">
-        <input type="hidden" name="listing_id" value="${esc(l.id)}">
-        <span class="feedback__label">Rate this listing:</span>
-        <button class="feedback__btn feedback__btn--up" name="rating" value="more_interesting" title="More interesting than expected">👍</button>
-        <button class="feedback__btn" name="rating" value="as_expected" title="As expected">👌</button>
-        <button class="feedback__btn feedback__btn--down" name="rating" value="less_interesting" title="Less interesting than expected">👎</button>
-      </form>
-    </article>`;
+      </summary>
+      <div class="listing__body">
+        <dl class="listing__details">
+          <dt>Price</dt>    <dd>${fmtPrice(l.price, l.priceCurrency)}</dd>
+          <dt>Year</dt>     <dd>${l.year ?? '—'}</dd>
+          <dt>Location</dt> <dd>${esc(l.location) || '—'}</dd>
+          <dt>Source</dt>   <dd><a href="${esc(l.listingUrl)}" target="_blank" rel="noopener">${esc(l.sourceSite)}</a></dd>
+          <dt>First seen</dt><dd>${fmtDate(l.dateFirstFound)}</dd>
+        </dl>
+        ${l.evidence && l.evidence.length > 0 ? renderEvidence(l.evidence) : ''}
+        <form class="feedback" method="post" action="/feedback">
+          <input type="hidden" name="listing_id" value="${esc(l.id)}">
+          <span class="feedback__label">Rate this listing:</span>
+          <button class="feedback__btn feedback__btn--up" name="rating" value="more_interesting" title="More interesting than expected">👍</button>
+          <button class="feedback__btn" name="rating" value="as_expected" title="As expected">👌</button>
+          <button class="feedback__btn feedback__btn--down" name="rating" value="less_interesting" title="Less interesting than expected">👎</button>
+        </form>
+      </div>
+    </details>`;
 }
 
 function renderFilterBar(filters: ActiveFilters): string {
@@ -281,14 +304,18 @@ export function renderListingsPage(data: ListingsPageData): string {
     .meta { color: #666; font-size: .875rem; margin-top: 0; }
     .banner--error { background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; padding: .75rem 1rem; margin-bottom: 1.5rem; }
     .banner--error ul { margin: .5rem 0 0; padding-left: 1.25rem; }
-    .listing { border: 1px solid #ddd; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
+    .listing { border: 1px solid #ddd; border-radius: 6px; margin-bottom: 1rem; }
     .listing--new { border-color: #0d6efd; }
-    .listing__header { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
-    .listing__title { margin: 0; font-size: 1.1rem; }
-    .listing__title a { text-decoration: none; color: inherit; }
-    .listing__title a:hover { text-decoration: underline; }
-    .listing__score { font-size: 1.5rem; font-weight: bold; color: #0d6efd; white-space: nowrap; }
-    .listing__details { display: grid; grid-template-columns: auto 1fr; gap: .15rem .75rem; margin: .75rem 0 0; font-size: .9rem; }
+    .listing__summary { display: flex; align-items: center; gap: .75rem; padding: .75rem 1rem; cursor: pointer; list-style: none; }
+    .listing__summary::-webkit-details-marker { display: none; }
+    .listing__summary-text { flex: 1; min-width: 0; }
+    .listing__headline { font-size: 1rem; font-weight: 600; color: #212529; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .listing__facts { font-size: .85rem; color: #555; margin-top: .15rem; }
+    .listing__score { font-size: 1.4rem; font-weight: bold; color: #0d6efd; white-space: nowrap; flex-shrink: 0; }
+    .listing__thumbnail { width: 80px; height: 60px; object-fit: cover; border-radius: 4px; flex-shrink: 0; }
+    .thumbnail-placeholder { width: 80px; height: 60px; background: #f0f0f0; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: .65rem; text-align: center; flex-shrink: 0; }
+    .listing__body { border-top: 1px solid #eee; padding: .75rem 1rem; }
+    .listing__details { display: grid; grid-template-columns: auto 1fr; gap: .15rem .75rem; margin: 0 0 .75rem; font-size: .9rem; }
     dt { font-weight: 600; color: #555; }
     dd { margin: 0; }
     .reg { font-family: monospace; background: #f0f0f0; padding: .1em .4em; border-radius: 3px; margin-left: .5rem; }

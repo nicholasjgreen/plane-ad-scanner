@@ -5,6 +5,8 @@ import { resetIsNew, runHistorian } from './historian.js';
 import { runScraper } from './scraper.js';
 import { runScraperOllama } from './scraper-ollama.js';
 import { runMatcher } from './matcher.js';
+import { runPresenter } from './presenter.js';
+import { getPendingListingIds, setStatusReady, setStatusFailed } from '../db/listing-ai.js';
 import OpenAI from 'openai';
 import type {
   ScraperOutput,
@@ -15,6 +17,8 @@ import type {
   ScanRunResult,
   ScanError,
   InterestProfile,
+  PresenterInput,
+  PresenterOutput,
 } from '../types.js';
 import type { Config, Criterion } from '../config.js';
 import { logger } from '../config.js';
@@ -27,6 +31,8 @@ export interface OrchestratorDeps {
     scanStartedAt: string
   ) => Promise<HistorianResult>;
   matcher?: (listings: ListingForScoring[], criteria: Criterion[], profiles?: InterestProfile[], db?: Database.Database, homeLocation?: { lat: number; lon: number } | null, scoringClient?: Anthropic | OpenAI | null, scoringModel?: string | null) => Promise<MatcherOutput>;
+  presenter?: (input: PresenterInput, anthropic: Anthropic, model: string) => Promise<PresenterOutput>;
+  presenterModel?: string;
   ollamaClient?: OpenAI;
   ollamaScraperModel?: string;
   scoringClient?: Anthropic | OpenAI | null;
@@ -58,6 +64,18 @@ interface DbListingRow {
   price: number | null;
   price_currency: string;
   location: string | null;
+}
+
+interface DbPresenterRow {
+  id: string;
+  make: string | null;
+  model: string | null;
+  year: number | null;
+  price: number | null;
+  price_currency: string;
+  location: string | null;
+  source_site: string;
+  raw_attributes: string | null;
 }
 
 function toListingForScoring(row: DbListingRow): ListingForScoring {
@@ -195,6 +213,55 @@ export async function runScan(
     } catch (err) {
       logger.error({ err }, 'Matcher failed — retaining existing scores');
     }
+  }
+
+  // Run Presenter for all listings with pending AI content (new + stale)
+  const pendingIds = getPendingListingIds(db);
+  if (pendingIds.length > 0) {
+    const presenterFn = deps.presenter ?? runPresenter;
+    const presenterModel = deps.presenterModel ?? config.agent.matcher_model;
+
+    logger.info({ count: pendingIds.length }, 'Presenter: generating headlines and explanations');
+
+    await Promise.allSettled(
+      pendingIds.map(async (listingId) => {
+        try {
+          const row = db
+            .prepare(
+              `SELECT id, make, model, year, price, price_currency, location, source_site, raw_attributes
+               FROM listings WHERE id = ?`
+            )
+            .get(listingId) as DbPresenterRow | undefined;
+          if (!row) return;
+
+          const input: PresenterInput = {
+            listing: {
+              id: row.id,
+              make: row.make,
+              model: row.model,
+              year: row.year,
+              price: row.price,
+              priceCurrency: row.price_currency,
+              location: row.location,
+              sourceSite: row.source_site,
+              attributes: (JSON.parse(row.raw_attributes ?? '{}') as Record<string, string>),
+            },
+            profiles,
+          };
+
+          const output = await presenterFn(input, anthropic, presenterModel);
+          setStatusReady(db, listingId, {
+            headline: output.headline,
+            explanation: output.explanation,
+            modelVer: '',  // Populated with profile hash in Phase 6 (T016)
+          });
+          logger.debug({ listingId }, 'Presenter: done');
+        } catch (err) {
+          logger.error({ listingId, err }, 'Presenter: failed for listing');
+          setStatusFailed(db, listingId);
+        }
+      })
+    );
   }
 
   db.prepare(
