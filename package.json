@@ -12,6 +12,9 @@
     "scan": "tsx src/cli/scan.ts",
     "rescore": "tsx src/cli/rescore.ts",
     "setup-profile": "tsx src/cli/setup-profile.ts",
+    "clear-listings": "tsx src/cli/clear-listings.ts",
+    "scraper-diag": "tsx src/cli/scraper-diag.ts",
+    "card-diag": "tsx src/cli/card-diag.ts",
     "serve": "SERVE_ONLY=true tsx src/web/server.ts",
     "build": "tsc --noEmit",
     "test": "vitest run",
@@ -29,6 +32,7 @@
     "openai": "^6.33.0",
     "pino": "^9.0.0",
     "uuid": "^11.0.0",
+    "turndown": "^7.2.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
@@ -38,6 +42,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.0.0",
     "@types/node-cron": "^3.0.11",
+    "@types/turndown": "^5.0.0",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",

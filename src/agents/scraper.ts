@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { ScraperOutput, RawListing } from '../types.js';
 import { logger } from '../config.js';
+import { preFilterHtml, formatCardsForLlm } from './html-prefilter.js';
 
 // Registration patterns (UK / US / EU common)
 const REG_PATTERNS = [
@@ -34,6 +35,45 @@ async function defaultFetch(url: string): Promise<string> {
   return resp.text();
 }
 
+const SCRAPER_BATCH_SIZE = 15;
+
+async function llmExtractBatch(
+  cards: import('./html-prefilter.js').CardData[],
+  origin: string,
+  anthropic: Anthropic,
+  maxTokens: number
+): Promise<unknown[]> {
+  const userContent = `Extract structured data from these aircraft listing cards:\n\n${formatCardsForLlm(cards)}`;
+
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: Math.min(maxTokens, 4096),
+    system: `You extract aircraft-for-sale listings into JSON.
+Return ONLY a JSON array of objects with these fields (omit absent fields):
+- listingUrl: string (required — use the URL from the "URL:" line exactly as given; relative URLs → prepend ${origin})
+- aircraftType: string
+- make: string
+- model: string
+- registration: string (e.g. G-ABCD, N12345A)
+- year: number
+- price: number (numeric only, no symbols; omit if POA or unknown)
+- priceCurrency: string (default "GBP")
+- location: string
+- imageUrls: array of strings (thumbnail/photo URLs for this listing; relative URLs → prepend ${origin}; omit if none)
+- attributes: object of any other key-value pairs`,
+    messages: [{ role: 'user', content: userContent }],
+  });
+
+  const text = response.content
+    .filter((b) => b.type === 'text')
+    .map((b) => (b as { type: 'text'; text: string }).text)
+    .join('');
+
+  const match = text.match(/\[[\s\S]*\]/);
+  if (!match) return [];
+  return JSON.parse(match[0]) as unknown[];
+}
+
 async function llmExtract(
   html: string,
   siteUrl: string,
@@ -41,14 +81,25 @@ async function llmExtract(
   maxTokens: number
 ): Promise<RawListing[]> {
   const origin = new URL(siteUrl).origin;
-  const trimmed = html.slice(0, 40_000);
 
-  // Cap output tokens — scraper only returns a JSON array, 4096 is ample.
-  // token_budget_per_run controls spend, not per-call output size.
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: Math.min(maxTokens, 4096),
-    system: `You extract aircraft-for-sale listings from HTML into JSON.
+  const cards = preFilterHtml(html, siteUrl);
+  let rawItems: unknown[];
+
+  if (cards.length > 0) {
+    logger.debug({ site: siteUrl, cards: cards.length }, 'Scraper: pre-filter found cards');
+    // Batch to stay within output token limits
+    const batches: unknown[][] = [];
+    for (let i = 0; i < cards.length; i += SCRAPER_BATCH_SIZE) {
+      batches.push(await llmExtractBatch(cards.slice(i, i + SCRAPER_BATCH_SIZE), origin, anthropic, maxTokens));
+    }
+    rawItems = batches.flat();
+  } else {
+    logger.debug({ site: siteUrl }, 'Scraper: no cards found, falling back to raw HTML');
+    const userContent = `Extract listings from:\n\n${html.slice(0, 100_000)}`;
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: Math.min(maxTokens, 4096),
+      system: `You extract aircraft-for-sale listings from HTML into JSON.
 Return ONLY a JSON array of objects with these fields (omit absent fields):
 - listingUrl: string (required; relative URLs → prepend ${origin})
 - aircraftType: string
@@ -59,21 +110,19 @@ Return ONLY a JSON array of objects with these fields (omit absent fields):
 - price: number (numeric only, no symbols)
 - priceCurrency: string (default "GBP")
 - location: string
-- imageUrls: array of strings (thumbnail/photo URLs for this listing; relative URLs → prepend ${origin}; omit if none)
+- imageUrls: array of strings (thumbnail/photo URLs; relative URLs → prepend ${origin}; omit if none)
 - attributes: object of any other key-value pairs`,
-    messages: [{ role: 'user', content: `Extract listings from:\n\n${trimmed}` }],
-  });
+      messages: [{ role: 'user', content: userContent }],
+    });
+    const text = response.content
+      .filter((b) => b.type === 'text')
+      .map((b) => (b as { type: 'text'; text: string }).text)
+      .join('');
+    const match = text.match(/\[[\s\S]*\]/);
+    rawItems = match ? (JSON.parse(match[0]) as unknown[]) : [];
+  }
 
-  const text = response.content
-    .filter((b) => b.type === 'text')
-    .map((b) => (b as { type: 'text'; text: string }).text)
-    .join('');
-
-  const match = text.match(/\[[\s\S]*\]/);
-  if (!match) return [];
-
-  const raw = JSON.parse(match[0]) as unknown[];
-  return raw
+  return rawItems
     .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
     .map((item) => {
       const listing: RawListing = {

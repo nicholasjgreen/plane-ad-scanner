@@ -4,6 +4,7 @@
 import OpenAI from 'openai';
 import type { ScraperOutput, RawListing } from '../types.js';
 import { logger } from '../config.js';
+import { preFilterHtml, formatCardsForLlm } from './html-prefilter.js';
 
 // Registration patterns (UK / US / EU common) — mirrors scraper.ts
 const REG_PATTERNS = [
@@ -42,41 +43,55 @@ async function llmExtractOllama(
   model: string
 ): Promise<RawListing[]> {
   const origin = new URL(siteUrl).origin;
-  const trimmed = html.slice(0, 40_000);
+
+  const cards = preFilterHtml(html, siteUrl);
+  let userContent: string;
+
+  if (cards.length > 0) {
+    logger.debug({ site: siteUrl, cards: cards.length }, 'Ollama scraper: pre-filter found cards');
+    userContent = `Extract structured data from these aircraft listing cards:\n\n${formatCardsForLlm(cards)}`;
+  } else {
+    logger.debug({ site: siteUrl }, 'Ollama scraper: no cards found, falling back to raw HTML');
+    userContent = `Extract listings from:\n\n${html.slice(0, 100_000)}`;
+  }
 
   const response = await client.chat.completions.create({
     model,
+    max_tokens: 4096,
     response_format: { type: 'json_object' },
     messages: [
       {
         role: 'system',
-        content: `You extract aircraft-for-sale listings from HTML into JSON.
-Return ONLY a JSON object with a single key "listings" containing an array of objects.
-Each object may have these fields (omit absent fields):
-- listingUrl: string (required; relative URLs → prepend ${origin})
+        content: `You extract aircraft-for-sale listings into JSON.
+Return ONLY a JSON object {"listings": [...]} where each item has these fields (omit absent):
+- listingUrl: string (required — use the URL from the "URL:" line exactly as given; relative URLs → prepend ${origin})
 - aircraftType: string
 - make: string
 - model: string
 - registration: string (e.g. G-ABCD, N12345A)
 - year: number
-- price: number (numeric only, no symbols)
+- price: number (numeric only, no symbols; omit if POA or unknown)
 - priceCurrency: string (default "GBP")
 - location: string
 
 Example: {"listings":[{"listingUrl":"https://example.com/ad/123","make":"Cessna","model":"172","price":45000,"priceCurrency":"GBP"}]}
-If no listings are found return: {"listings":[]}`,
+If no listings found: {"listings":[]}`,
       },
       {
         role: 'user',
-        content: `Extract listings from:\n\n${trimmed}`,
+        content: userContent,
       },
     ],
   });
 
   const raw = response.choices[0]?.message?.content ?? '';
 
-  // Strip markdown fences local models sometimes add despite response_format
-  const text = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim();
+  // Strip markdown fences and <think> blocks that some local models emit
+  const text = raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```(?:json)?\s*/gi, '')
+    .replace(/```/g, '')
+    .trim();
 
   let parsed: { listings?: unknown[] };
   try {

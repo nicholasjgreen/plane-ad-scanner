@@ -17,8 +17,8 @@ web:
 ollama:
   url: "http://host.docker.internal:11434"   # Mac/Windows
   #url: "http://localhost:11434"               # running outside Docker
-  verification_model: "qwen3:8b"
-  scraper_model: "qwen3:8b"
+  #verification_model: "qwen3:8b"
+  #scraper_model: "qwen3:8b"
   scoring_model: "qwen3:8b"
 
 agent:
@@ -53,7 +53,7 @@ criteria:
 # Feature 003 takes over site management when integrated.
 sites:
   - name: "Afors"
-    url: "https://afors.uk/light-aircraft/for-sale?page=1"
+    url: "https://afors.uk/light-aircraft/for-sale"
     enabled: true
 
   - name: "Trade-A-Plane"

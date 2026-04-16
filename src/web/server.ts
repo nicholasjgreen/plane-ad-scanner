@@ -505,8 +505,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   const serveOnly = process.env.SERVE_ONLY === 'true';
 
-  const ollamaScraperModel =
-    config.ollama?.scraper_model ?? config.ollama?.verification_model;
+  const ollamaScraperModel = config.ollama?.scraper_model ?? null;
 
   const scoringClient: Anthropic | OpenAI | null = config.ollama?.scoring_model
     ? new OpenAI({ baseURL: `${config.ollama.url}/v1`, apiKey: 'ollama' })

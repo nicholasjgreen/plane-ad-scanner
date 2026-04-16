@@ -15,7 +15,7 @@ if (profiles.length > 0) {
   logger.info({ count: profiles.length }, 'Loaded interest profiles');
 }
 
-const ollamaScraperModel = config.ollama?.scraper_model ?? config.ollama?.verification_model;
+const ollamaScraperModel = config.ollama?.scraper_model ?? null;
 const ollamaClient =
   config.ollama && ollamaScraperModel
     ? new OpenAI({ baseURL: `${config.ollama.url}/v1`, apiKey: 'ollama' })
