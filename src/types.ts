@@ -174,6 +174,23 @@ export interface FeedbackRecord {
   createdAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Feature 006: Detail Fetcher agent types
+// ---------------------------------------------------------------------------
+
+export interface DetailFetcherInput {
+  listingId: string;    // DB primary key — for correlation only, not sent to LLM
+  listingUrl: string;   // Full URL of the listing detail page
+  sourceSite: string;   // Site name — used for logging
+}
+
+export interface DetailFetchResult {
+  listingId: string;
+  attributes: Record<string, string>;  // All labelled fields extracted from detail page
+  imageUrls: string[];                 // All image URLs found (absolute)
+  error?: string;                      // Present if fetch or LLM extraction failed
+}
+
 export interface WeightSuggestion {
   id: string;
   profileName: string;

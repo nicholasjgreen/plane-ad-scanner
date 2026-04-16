@@ -4,9 +4,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { resetIsNew, runHistorian } from './historian.js';
 import { runScraper } from './scraper.js';
 import { runScraperOllama } from './scraper-ollama.js';
+import { runDetailFetcher, mergeAttributes } from './detail-fetcher.js';
 import { runMatcher } from './matcher.js';
 import { runPresenter } from './presenter.js';
-import { getPendingListingIds, setStatusReady, setStatusFailed } from '../db/listing-ai.js';
+import { getPendingListingIds, setStatusReady, setStatusFailed, markListingAiStale } from '../db/listing-ai.js';
 import OpenAI from 'openai';
 import type {
   ScraperOutput,
@@ -19,9 +20,13 @@ import type {
   InterestProfile,
   PresenterInput,
   PresenterOutput,
+  DetailFetchResult,
 } from '../types.js';
 import type { Config, Criterion } from '../config.js';
 import { logger } from '../config.js';
+
+// Phase 3: Detail fetcher — see plan.md §Orchestrator Phase Order
+const DETAIL_CONCURRENCY = 5;
 
 export interface OrchestratorDeps {
   scraper?: (site: { name: string; url: string }) => Promise<ScraperOutput>;
@@ -32,6 +37,7 @@ export interface OrchestratorDeps {
   ) => Promise<HistorianResult>;
   matcher?: (listings: ListingForScoring[], criteria: Criterion[], profiles?: InterestProfile[], db?: Database.Database, homeLocation?: { lat: number; lon: number } | null, scoringClient?: Anthropic | OpenAI | null, scoringModel?: string | null) => Promise<MatcherOutput>;
   presenter?: (input: PresenterInput, anthropic: Anthropic, model: string) => Promise<PresenterOutput>;
+  detailFetcher?: (listingId: string, listingUrl: string, sourceSite: string) => Promise<DetailFetchResult>;
   presenterModel?: string;
   ollamaClient?: OpenAI;
   ollamaScraperModel?: string;
@@ -183,6 +189,87 @@ export async function runScan(
     totalNew += hist.newCount;
     allListingIds.push(...hist.listingIds);
     updateSiteOutcome(site.name, { date: startedAt, listingsFound: valid.length });
+  }
+
+  // Phase order: see plan.md §Orchestrator Phase Order
+  // Detail fetcher — fetch listing detail pages for richer attributes + images.
+  // Runs BEFORE the matcher so enriched data is available for scoring.
+  if (allListingIds.length > 0 && (deps.detailFetcher !== undefined || deps.ollamaClient)) {
+    const ollamaClient = deps.ollamaClient;
+    const ollamaModel = deps.ollamaScraperModel ?? '';
+
+    interface DbUrlRow { listing_url: string; source_site: string; }
+
+    const detailFetchFn =
+      deps.detailFetcher ??
+      ((listingId: string, listingUrl: string, sourceSite: string) =>
+        runDetailFetcher(
+          { listingId, listingUrl, sourceSite },
+          ollamaClient!,
+          ollamaModel
+        ));
+
+    let dfSucceeded = 0;
+    let dfFailed = 0;
+
+    for (let i = 0; i < allListingIds.length; i += DETAIL_CONCURRENCY) {
+      const batch = allListingIds.slice(i, i + DETAIL_CONCURRENCY);
+      await Promise.allSettled(
+        batch.map(async (listingId) => {
+          const urlRow = db
+            .prepare('SELECT listing_url, source_site FROM listings WHERE id = ?')
+            .get(listingId) as DbUrlRow | undefined;
+          if (!urlRow) return;
+
+          const result = await detailFetchFn(listingId, urlRow.listing_url, urlRow.source_site);
+
+          if (result.error) {
+            logger.warn({ listingId, error: result.error }, 'Detail fetcher: skipping listing');
+            dfFailed++;
+            return;
+          }
+
+          // Merge attributes: detail overwrites existing only when value is non-empty
+          const existingRow = db
+            .prepare('SELECT raw_attributes, thumbnail_url, all_image_urls FROM listings WHERE id = ?')
+            .get(listingId) as {
+              raw_attributes: string | null;
+              thumbnail_url: string | null;
+              all_image_urls: string | null;
+            } | undefined;
+
+          const existingAttrs: Record<string, string> = JSON.parse(
+            existingRow?.raw_attributes ?? '{}'
+          ) as Record<string, string>;
+          const mergedAttrs = mergeAttributes(existingAttrs, result.attributes);
+
+          const newThumbnail =
+            result.imageUrls.length > 0
+              ? result.imageUrls[0]
+              : existingRow?.thumbnail_url ?? null;
+          const newAllImages =
+            result.imageUrls.length > 0
+              ? JSON.stringify(result.imageUrls)
+              : existingRow?.all_image_urls ?? null;
+
+          db.prepare(`
+            UPDATE listings SET
+              raw_attributes  = ?,
+              thumbnail_url   = ?,
+              all_image_urls  = ?
+            WHERE id = ?
+          `).run(JSON.stringify(mergedAttrs), newThumbnail, newAllImages, listingId);
+
+          markListingAiStale(db, listingId);
+          dfSucceeded++;
+        })
+      );
+    }
+
+    logger.info(
+      { total: allListingIds.length, succeeded: dfSucceeded, failed: dfFailed },
+      'Detail fetch phase complete'
+    );
   }
 
   // Score all listings via Matcher; on failure, retain existing DB scores

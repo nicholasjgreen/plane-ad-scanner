@@ -180,6 +180,71 @@ describe('matcher scores written to DB', () => {
   });
 });
 
+describe('detail fetcher phase', () => {
+  it('calls detailFetcher for each listing in allListingIds', async () => {
+    seedSite(db, 'SiteA', 'https://site-a.com');
+
+    const listingId = randomUUID();
+    db.prepare(
+      `INSERT INTO listings (id, listing_url, source_site, match_score, is_new, date_first_found, date_last_seen, raw_attributes)
+       VALUES (?, 'https://site-a.com/l/1', 'SiteA', 0, 0, ?, ?, '{}')`
+    ).run(listingId, NOW, NOW);
+
+    const scraper = vi.fn().mockResolvedValue({ siteName: 'SiteA', listings: [] } as ScraperOutput);
+    const historian = vi
+      .fn()
+      .mockResolvedValue({ newCount: 1, updatedCount: 0, listingIds: [listingId] } as HistorianResult);
+    const matcher = vi.fn().mockResolvedValue({ scores: [] } as MatcherOutput);
+    const detailFetcher = vi
+      .fn()
+      .mockResolvedValue({ listingId, attributes: {}, imageUrls: [] });
+
+    await runScan(db, minimalConfig, { scraper, historian, matcher, detailFetcher });
+
+    expect(detailFetcher).toHaveBeenCalledOnce();
+    expect(detailFetcher).toHaveBeenCalledWith(
+      listingId,
+      'https://site-a.com/l/1',
+      expect.any(String)
+    );
+  });
+
+  it('does not abort scan when detailFetcher returns an error for one listing', async () => {
+    seedSite(db, 'SiteA', 'https://site-a.com');
+
+    const idA = randomUUID();
+    const idB = randomUUID();
+    for (const [id, url] of [[idA, 'https://site-a.com/l/1'], [idB, 'https://site-a.com/l/2']]) {
+      db.prepare(
+        `INSERT INTO listings (id, listing_url, source_site, match_score, is_new, date_first_found, date_last_seen, raw_attributes)
+         VALUES (?, ?, 'SiteA', 0, 0, ?, ?, '{}')`
+      ).run(id, url, NOW, NOW);
+    }
+
+    const scraper = vi.fn().mockResolvedValue({ siteName: 'SiteA', listings: [] } as ScraperOutput);
+    const historian = vi
+      .fn()
+      .mockResolvedValue({ newCount: 2, updatedCount: 0, listingIds: [idA, idB] } as HistorianResult);
+    const matcher = vi.fn().mockResolvedValue({ scores: [] } as MatcherOutput);
+    const detailFetcher = vi
+      .fn()
+      .mockResolvedValueOnce({ listingId: idA, attributes: {}, imageUrls: [], error: 'HTTP 404' })
+      .mockResolvedValueOnce({ listingId: idB, attributes: { make: 'Cessna' }, imageUrls: [] });
+
+    const result = await runScan(db, minimalConfig, { scraper, historian, matcher, detailFetcher });
+
+    // Scan must complete successfully
+    expect(result.id).toBeTruthy();
+    const row = db
+      .prepare('SELECT completed_at FROM scan_runs ORDER BY started_at DESC LIMIT 1')
+      .get() as { completed_at: string | null };
+    expect(row.completed_at).not.toBeNull();
+
+    // Both listings processed — detailFetcher called twice
+    expect(detailFetcher).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('matcher throws', () => {
   it('retains existing scores and still completes the scan', async () => {
     seedSite(db, 'SiteA', 'https://site-a.com');
