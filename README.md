@@ -106,7 +106,7 @@ database. Distance is calculated as the crow flies.
 After editing a profile you can update scores immediately without re-scraping:
 
 ```bash
-docker compose run --rm rescore
+make rescore
 ```
 
 This reads every listing from the database, runs the scorer against the current profiles, and writes updated `match_score` values. The web page reflects the new order on the next reload.
@@ -193,74 +193,46 @@ Recommended models for verification (in order of reliability):
 
 ## Running
 
-### Start the server + scheduler
-
-```bash
-docker compose up -d --build
-```
-
-The `--build` flag ensures the image is rebuilt from your latest code before starting.
+| Command | What it does |
+|---------|-------------|
+| `make start` | Build image (if needed) and start the server + scheduler in the background |
+| `make stop` | Stop everything |
+| `make logs` | Tail live logs from the running container |
+| `make scan` | Run a one-off scan and exit |
+| `make rescore` | Re-score all listings against current profiles without re-scraping |
+| `make dev` | Start with live reload — syncs `src/` into the container on every save |
+| `make test` | Build image and run the test suite |
+| `make build` | Build image and type-check (`tsc --noEmit`) |
+| `make lint` | Build image and lint all sources |
 
 The web UI is available at **http://localhost:3000**
 
 Admin panel (site management): **http://localhost:3000/admin**
 
-View logs:
-
-```bash
-docker compose logs -f app
-```
-
-### Run a one-off scan
-
-```bash
-docker compose run --rm scan
-```
-
-### Start the web server only (no scheduler)
-
-```bash
-docker compose up serve --build
-```
-
-### Stop everything
-
-```bash
-docker compose down
-```
-
 ---
 
 ## Development
 
-### Live reload on code changes (recommended)
+### Live reload on code changes
 
 ```bash
-docker compose watch
+make dev
 ```
 
-Docker Compose Watch detects changes in `src/` and automatically syncs the files into the
-running container and restarts the process — no manual rebuild needed. Only changes to
-`package.json` or `package-lock.json` trigger a full image rebuild (new dependencies).
-
-Run this in one terminal and keep coding; the server restarts in a few seconds after each save.
+Syncs `src/` into the running container and restarts on every save. Only `package.json` /
+`package-lock.json` changes trigger a full image rebuild.
 
 ### Run tests
 
 ```bash
-docker build -t plane-scanner . && docker run --rm plane-scanner npm test
+make test
 ```
 
-### Lint
+### Lint / type-check
 
 ```bash
-docker run --rm plane-scanner npm run lint
-```
-
-### Type-check
-
-```bash
-docker run --rm plane-scanner npm run build
+make lint
+make build
 ```
 
 ---

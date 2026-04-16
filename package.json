@@ -8,19 +8,19 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "start": "tsx src/web/server.ts",
-    "scan": "tsx src/cli/scan.ts",
-    "rescore": "tsx src/cli/rescore.ts",
-    "setup-profile": "tsx src/cli/setup-profile.ts",
+    "start":          "tsx src/web/server.ts",
+    "serve":          "SERVE_ONLY=true tsx src/web/server.ts",
+    "scan":           "tsx src/cli/scan.ts",
+    "rescore":        "tsx src/cli/rescore.ts",
+    "setup-profile":  "tsx src/cli/setup-profile.ts",
     "clear-listings": "tsx src/cli/clear-listings.ts",
-    "scraper-diag": "tsx src/cli/scraper-diag.ts",
-    "card-diag": "tsx src/cli/card-diag.ts",
-    "serve": "SERVE_ONLY=true tsx src/web/server.ts",
-    "build": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "scraper-diag":   "tsx src/cli/scraper-diag.ts",
+    "card-diag":      "tsx src/cli/card-diag.ts",
+    "test":           "vitest run",
+    "test:watch":     "vitest",
+    "lint":           "eslint .",
+    "lint:fix":       "eslint . --fix",
+    "build":          "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
