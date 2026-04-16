@@ -1,5 +1,6 @@
 // One-off scan entry point: npm run scan
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { join } from 'node:path';
 import { loadConfig, logger } from '../config.js';
 import { initDb } from '../db/index.js';
@@ -20,8 +21,16 @@ const ollamaClient =
   config.ollama && ollamaScraperModel
     ? new OpenAI({ baseURL: `${config.ollama.url}/v1`, apiKey: 'ollama' })
     : undefined;
+
+const scoringClient: Anthropic | OpenAI | null = config.ollama?.scoring_model
+  ? new OpenAI({ baseURL: `${config.ollama.url}/v1`, apiKey: 'ollama' })
+  : new Anthropic();
+const scoringModel = config.ollama?.scoring_model ?? config.agent.matcher_model;
+
 const scanDeps = {
   ...(ollamaClient && ollamaScraperModel ? { ollamaClient, ollamaScraperModel } : {}),
+  scoringClient,
+  scoringModel,
   profiles,
 };
 
