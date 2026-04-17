@@ -20,6 +20,7 @@ const before = {
 logger.info({ before }, 'Clearing listing data (sites preserved)');
 
 db.exec(`
+  DELETE FROM listing_indicators;
   DELETE FROM listing_ai;
   DELETE FROM listing_scores;
   DELETE FROM listing_feedback;

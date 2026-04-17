@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import type { RawListing } from '../types.js';
 import { upsertListingAi, markListingAiStale } from '../db/listing-ai.js';
+import { upsertListingIndicators, markIndicatorsStale } from '../db/listing-indicators.js';
 
 export interface DedupResult {
   id: string;
@@ -58,8 +59,9 @@ export function upsertListing(
         allImageUrls,
         listing.registration
       );
-      // Mark the existing AI content stale so the explanation is regenerated
+      // Mark the existing AI content and indicators stale so they are regenerated
       markListingAiStale(db, existing.id);
+      markIndicatorsStale(db, existing.id);
       return { id: existing.id, isNew: false };
     }
   }
@@ -96,8 +98,9 @@ export function upsertListing(
     allImageUrls
   );
 
-  // Create a pending listing_ai row so the Presenter knows to generate content
+  // Create pending rows so Presenter and IndicatorDeriver know to process this listing
   upsertListingAi(db, id);
+  upsertListingIndicators(db, id);
 
   return { id, isNew: true };
 }

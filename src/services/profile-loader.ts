@@ -56,6 +56,13 @@ const ProximityCriterionSchema = z.object({
   weight: z.number().positive(),
 });
 
+const IndicatorCriterionSchema = z.object({
+  type: z.literal('indicator'),
+  indicatorField: z.string().min(1),
+  indicatorValue: z.string().min(1),
+  weight: z.number().positive(),
+});
+
 const ProfileCriterionSchema = z.union([
   MissionTypeCriterionSchema,
   MakeModelCriterionSchema,
@@ -63,6 +70,7 @@ const ProfileCriterionSchema = z.union([
   YearRangeCriterionSchema,
   ListingTypeCriterionSchema,
   ProximityCriterionSchema,
+  IndicatorCriterionSchema,
 ]);
 
 const InterestProfileSchema = z.object({

@@ -158,7 +158,7 @@ describe('POST /rescore', () => {
         const row = db.prepare(`SELECT status FROM listing_ai WHERE listing_id = ?`).get(failId) as { status: string } | undefined;
         expect(row?.status).toBe('failed');
 
-        failServer.close(resolve);
+        failServer.close(() => resolve());
       });
     });
   });

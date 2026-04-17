@@ -1,6 +1,8 @@
 // Server-rendered HTML template for the listings page.
 // All rendering rules from contracts/web-routes.md are implemented here.
 
+import type { StructuredIndicators, Confidence } from '../types.js';
+
 export interface EvidenceRow {
   profileName: string;
   criterionName: string;
@@ -31,6 +33,7 @@ export interface ListingRow {
   aiStatus: 'pending' | 'ready' | 'failed' | null;  // null = no listing_ai row yet
   thumbnailUrl: string | null;   // First scraped image URL; null if none found
   allImageUrls: string[];        // All scraped image URLs for the gallery
+  indicators: StructuredIndicators | null;  // Structured indicators; null until derived
 }
 
 export interface LastScanInfo {
@@ -158,6 +161,91 @@ function renderThumbnail(thumbnailUrl: string | null): string {
   return `<div class="thumbnail-placeholder" aria-hidden="true">No photo</div>`;
 }
 
+function confidenceBadge(conf: Confidence): string {
+  const cls = conf === 'High' ? 'conf--high' : conf === 'Medium' ? 'conf--medium' : 'conf--low';
+  return `<span class="conf-badge ${cls}">${conf}</span>`;
+}
+
+function renderIndicatorRow(label: string, ind: { value: unknown; band?: unknown; confidence: Confidence } | undefined): string {
+  if (!ind) return '';
+  const isUnknown = ind.value === null || ind.value === undefined;
+  const isBanded = 'band' in ind;
+  let valText: string;
+  if (isUnknown) {
+    valText = '<span class="ind-val ind-val--unknown">Unknown</span>';
+  } else if (isBanded && ind.band !== null) {
+    valText = `<span class="ind-val">${esc(String(ind.band))}</span> <span class="ind-val--raw">(${esc(String(ind.value))})</span>`;
+  } else {
+    valText = `<span class="ind-val">${esc(String(ind.value))}</span>`;
+  }
+  const badge = isUnknown ? '' : confidenceBadge(ind.confidence);
+  return `<div class="ind-row"><span class="ind-label">${esc(label)}</span>${valText}${badge}</div>`;
+}
+
+function renderIndicatorGroups(indicators: StructuredIndicators | null): string {
+  if (!indicators) return '';
+
+  const groups: Array<{ title: string; rows: string }> = [
+    {
+      title: 'Avionics &amp; IFR',
+      rows: [
+        renderIndicatorRow('Avionics', indicators.avionics_type),
+        renderIndicatorRow('Autopilot', indicators.autopilot_capability),
+        renderIndicatorRow('IFR Approval', indicators.ifr_approval),
+        renderIndicatorRow('IFR Capability', indicators.ifr_capability_level),
+      ].join(''),
+    },
+    {
+      title: 'Engine &amp; Airworthiness',
+      rows: [
+        renderIndicatorRow('Engine State', indicators.engine_state),
+        renderIndicatorRow('SMOH Hours', indicators.smoh_hours),
+        renderIndicatorRow('Condition', indicators.condition_band),
+        renderIndicatorRow('Airworthiness', indicators.airworthiness_basis),
+      ].join(''),
+    },
+    {
+      title: 'Aircraft Profile',
+      rows: [
+        renderIndicatorRow('Type Category', indicators.aircraft_type_category),
+        renderIndicatorRow('Passengers', indicators.passenger_capacity),
+        renderIndicatorRow('Typical Range', indicators.typical_range),
+        renderIndicatorRow('Cruise Speed', indicators.typical_cruise_speed),
+        renderIndicatorRow('Fuel Burn', indicators.typical_fuel_burn),
+      ].join(''),
+    },
+    {
+      title: 'Costs',
+      rows: [
+        renderIndicatorRow('Maintenance Cost', indicators.maintenance_cost_band),
+        renderIndicatorRow('Fuel Cost', indicators.fuel_cost_band),
+        renderIndicatorRow('Maintenance Program', indicators.maintenance_program),
+      ].join(''),
+    },
+    {
+      title: 'Provenance',
+      rows: [
+        renderIndicatorRow('Registration Country', indicators.registration_country),
+        renderIndicatorRow('Ownership', indicators.ownership_structure),
+        renderIndicatorRow('Hangar', indicators.hangar_situation),
+        renderIndicatorRow('Redundancy', indicators.redundancy_level),
+      ].join(''),
+    },
+  ];
+
+  const groupHtml = groups
+    .map(
+      (g) => `
+      <details class="ind-group">
+        <summary class="ind-group__title">${g.title}</summary>
+        <div class="ind-group__body">${g.rows}</div>
+      </details>`
+    )
+    .join('');
+
+  return `<div class="ind-groups">${groupHtml}</div>`;
+}
+
 function renderListing(l: ListingRow): string {
   // Headline: AI-generated → aircraft type → make+model → site name
   const headline =
@@ -193,6 +281,7 @@ function renderListing(l: ListingRow): string {
           <dt>First seen</dt><dd>${fmtDate(l.dateFirstFound)}</dd>
         </dl>
         ${l.evidence && l.evidence.length > 0 ? renderEvidence(l.evidence) : ''}
+        ${renderIndicatorGroups(l.indicators)}
         <div class="listing__actions">
           <a class="listing__source-link" href="${esc(l.listingUrl)}" target="_blank" rel="noopener">View original listing →</a>
           <form class="rescore-form" method="post" action="/rescore">

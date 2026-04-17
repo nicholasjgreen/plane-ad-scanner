@@ -12,6 +12,7 @@
  */
 
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 import TurndownService from 'turndown';
 
 const td = new TurndownService({
@@ -62,15 +63,15 @@ function getCardMarkdown(
   maxChars = 600
 ): string {
   const INLINE_TAGS = new Set(['span', 'strong', 'em', 'b', 'i', 'a', 'small']);
-  let cur = $link.parent();
-  let best: ReturnType<typeof $> | null = null;
+  let cur: cheerio.Cheerio<AnyNode> = $link.parent();
+  let best: cheerio.Cheerio<AnyNode> | null = null;
 
   for (let d = 0; d < 8; d++) {
     if (!cur.length) break;
 
     const tag = ((cur[0] as { tagName?: string })?.tagName ?? '').toLowerCase();
     if (INLINE_TAGS.has(tag)) {
-      cur = cur.parent() as ReturnType<typeof $>;
+      cur = cur.parent();
       continue;
     }
 
@@ -80,7 +81,7 @@ function getCardMarkdown(
     }
     if (text.length > 800 && best) break;
 
-    cur = cur.parent() as ReturnType<typeof $>;
+    cur = cur.parent();
   }
 
   if (!best) return '';

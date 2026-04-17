@@ -7,6 +7,7 @@ import type { Criterion } from '../config.js';
 import { scoreListing } from '../services/scoring.js';
 import { scoreListingAgainstProfiles } from '../services/profile-scorer.js';
 import { evaluateMissionType, type MissionTypeResult } from '../services/mission-type-evaluator.js';
+import { getListingIndicators } from '../db/listing-indicators.js';
 import { logger } from '../config.js';
 
 /**
@@ -79,12 +80,14 @@ export async function runMatcher(
           }
         }
 
+        const indicators = db ? getListingIndicators(db, listing.id) : null;
         const { overallScore, profileScores } = scoreListingAgainstProfiles(
           listing,
           profiles,
           homeLocation,
           db,
-          missionTypeOverrides
+          missionTypeOverrides,
+          indicators
         );
         if (db) {
           persistProfileScores(db, listing.id, profileScores, scoredAt);

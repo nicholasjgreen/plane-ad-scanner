@@ -8,6 +8,8 @@ import { runDetailFetcher, mergeAttributes } from './detail-fetcher.js';
 import { runMatcher } from './matcher.js';
 import { runPresenter } from './presenter.js';
 import { getPendingListingIds, setStatusReady, setStatusFailed, markListingAiStale } from '../db/listing-ai.js';
+import { getPendingOrStaleListingIds, setIndicatorsReady, setIndicatorsFailed } from '../db/listing-indicators.js';
+import { runIndicatorDeriver } from './indicator-deriver.js';
 import OpenAI from 'openai';
 import type {
   ScraperOutput,
@@ -21,12 +23,44 @@ import type {
   PresenterInput,
   PresenterOutput,
   DetailFetchResult,
+  IndicatorDeriverInput,
+  IndicatorDeriverOutput,
 } from '../types.js';
 import type { Config, Criterion } from '../config.js';
 import { logger } from '../config.js';
 
 // Phase 3: Detail fetcher — see plan.md §Orchestrator Phase Order
 const DETAIL_CONCURRENCY = 5;
+
+// Concurrency for LLM phases (Presenter, Indicator Deriver) — kept low to respect rate limits
+const LLM_CONCURRENCY = 3;
+
+/**
+ * Retry an async operation when the Anthropic API returns 429 rate-limit errors.
+ * Respects the retry-after header (defaults to 60s if absent). Gives up after maxRetries.
+ */
+async function withRateLimitRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 4,
+  label = ''
+): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      const headers = (err as { headers?: Record<string, string> }).headers;
+      const isRateLimit = status === 429;
+      if (!isRateLimit || attempt >= maxRetries) throw err;
+      attempt++;
+      const retryAfterSec = headers?.['retry-after'] ? Number(headers['retry-after']) : 60;
+      const waitMs = Math.max(retryAfterSec * 1000, 1000);
+      logger.warn({ label, attempt, waitMs }, 'Rate limited — retrying after delay');
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+}
 
 export interface OrchestratorDeps {
   scraper?: (site: { name: string; url: string }) => Promise<ScraperOutput>;
@@ -38,6 +72,7 @@ export interface OrchestratorDeps {
   matcher?: (listings: ListingForScoring[], criteria: Criterion[], profiles?: InterestProfile[], db?: Database.Database, homeLocation?: { lat: number; lon: number } | null, scoringClient?: Anthropic | OpenAI | null, scoringModel?: string | null) => Promise<MatcherOutput>;
   presenter?: (input: PresenterInput, anthropic: Anthropic, model: string) => Promise<PresenterOutput>;
   detailFetcher?: (listingId: string, listingUrl: string, sourceSite: string) => Promise<DetailFetchResult>;
+  indicatorDeriver?: (input: IndicatorDeriverInput, anthropic: Anthropic, model: string) => Promise<IndicatorDeriverOutput>;
   presenterModel?: string;
   ollamaClient?: OpenAI;
   ollamaScraperModel?: string;
@@ -310,44 +345,111 @@ export async function runScan(
 
     logger.info({ count: pendingIds.length }, 'Presenter: generating headlines and explanations');
 
-    await Promise.allSettled(
-      pendingIds.map(async (listingId) => {
-        try {
+    for (let i = 0; i < pendingIds.length; i += LLM_CONCURRENCY) {
+      const batch = pendingIds.slice(i, i + LLM_CONCURRENCY);
+      await Promise.allSettled(
+        batch.map(async (listingId) => {
+          try {
+            const row = db
+              .prepare(
+                `SELECT id, make, model, year, price, price_currency, location, source_site, raw_attributes
+                 FROM listings WHERE id = ?`
+              )
+              .get(listingId) as DbPresenterRow | undefined;
+            if (!row) return;
+
+            const input: PresenterInput = {
+              listing: {
+                id: row.id,
+                make: row.make,
+                model: row.model,
+                year: row.year,
+                price: row.price,
+                priceCurrency: row.price_currency,
+                location: row.location,
+                sourceSite: row.source_site,
+                attributes: (JSON.parse(row.raw_attributes ?? '{}') as Record<string, string>),
+              },
+              profiles,
+            };
+
+            const output = await withRateLimitRetry(
+              () => presenterFn(input, anthropic, presenterModel),
+              4,
+              `presenter:${listingId}`
+            );
+            setStatusReady(db, listingId, {
+              headline: output.headline,
+              explanation: output.explanation,
+              modelVer: '',
+            });
+            logger.debug({ listingId }, 'Presenter: done');
+          } catch (err) {
+            logger.error({ listingId, err }, 'Presenter: failed for listing');
+            setStatusFailed(db, listingId);
+          }
+        })
+      );
+    }
+  }
+
+  // Phase 6: Indicator Deriver — derive structured indicators for pending/stale listings
+  const pendingIndicatorIds = getPendingOrStaleListingIds(db);
+  if (pendingIndicatorIds.length > 0) {
+    const indicatorDeriverFn = deps.indicatorDeriver ?? runIndicatorDeriver;
+    const indicatorModel = config.agent.matcher_model;
+
+    interface DbIndicatorRow {
+      id: string;
+      aircraft_type: string | null;
+      make: string | null;
+      model: string | null;
+      registration: string | null;
+      raw_attributes: string | null;
+    }
+
+    let indSucceeded = 0;
+    let indFailed = 0;
+
+    for (let i = 0; i < pendingIndicatorIds.length; i += DETAIL_CONCURRENCY) {
+      const batch = pendingIndicatorIds.slice(i, i + DETAIL_CONCURRENCY);
+      await Promise.allSettled(
+        batch.map(async (listingId) => {
           const row = db
-            .prepare(
-              `SELECT id, make, model, year, price, price_currency, location, source_site, raw_attributes
-               FROM listings WHERE id = ?`
-            )
-            .get(listingId) as DbPresenterRow | undefined;
+            .prepare(`SELECT id, aircraft_type, make, model, registration, raw_attributes FROM listings WHERE id = ?`)
+            .get(listingId) as DbIndicatorRow | undefined;
           if (!row) return;
 
-          const input: PresenterInput = {
-            listing: {
-              id: row.id,
-              make: row.make,
-              model: row.model,
-              year: row.year,
-              price: row.price,
-              priceCurrency: row.price_currency,
-              location: row.location,
-              sourceSite: row.source_site,
-              attributes: (JSON.parse(row.raw_attributes ?? '{}') as Record<string, string>),
-            },
-            profiles,
+          const input: IndicatorDeriverInput = {
+            listingId: row.id,
+            rawAttributes: (JSON.parse(row.raw_attributes ?? '{}') as Record<string, string>),
+            aircraftType: row.aircraft_type,
+            make: row.make,
+            model: row.model,
+            registration: row.registration,
           };
 
-          const output = await presenterFn(input, anthropic, presenterModel);
-          setStatusReady(db, listingId, {
-            headline: output.headline,
-            explanation: output.explanation,
-            modelVer: '',  // Populated with profile hash in Phase 6 (T016)
-          });
-          logger.debug({ listingId }, 'Presenter: done');
-        } catch (err) {
-          logger.error({ listingId, err }, 'Presenter: failed for listing');
-          setStatusFailed(db, listingId);
-        }
-      })
+          const result = await withRateLimitRetry(
+            () => indicatorDeriverFn(input, anthropic, indicatorModel),
+            4,
+            `indicator:${listingId}`
+          );
+
+          if (result.error || !result.indicators) {
+            logger.warn({ listingId, error: result.error }, 'Indicator deriver: failed for listing');
+            setIndicatorsFailed(db, listingId);
+            indFailed++;
+          } else {
+            setIndicatorsReady(db, listingId, result.indicators);
+            indSucceeded++;
+          }
+        })
+      );
+    }
+
+    logger.info(
+      { total: pendingIndicatorIds.length, succeeded: indSucceeded, failed: indFailed },
+      'Indicator deriver phase complete'
     );
   }
 

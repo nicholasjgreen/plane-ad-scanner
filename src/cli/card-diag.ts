@@ -48,11 +48,11 @@ $('a[href]').each((_, el) => {
   if (count >= 5) return false; // show first 5 only
 
   const href = $(el).attr('href') ?? '';
-  if (!isListingUrl(href)) return;
+  if (!isListingUrl(href)) return true;
 
   let absUrl: string;
-  try { absUrl = new URL(href, origin).href; } catch { return; }
-  if (seen.has(absUrl)) return;
+  try { absUrl = new URL(href, origin).href; } catch { return true; }
+  if (seen.has(absUrl)) return true;
   seen.add(absUrl);
 
   // Walk up `depth` levels and show text at each level
@@ -70,6 +70,7 @@ $('a[href]').each((_, el) => {
     cur = parent as ReturnType<typeof $>;
   }
   console.log();
+  return true;
 });
 
 console.log(`Total unique listing links found: ${seen.size}`);

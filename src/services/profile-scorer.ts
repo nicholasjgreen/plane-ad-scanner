@@ -2,7 +2,7 @@
 // Pure function — no I/O, no side effects.
 
 import type Database from 'better-sqlite3';
-import type { ListingForScoring, InterestProfile, ProfileCriterion, ProfileScore, EvidenceItem } from '../types.js';
+import type { ListingForScoring, InterestProfile, ProfileCriterion, ProfileScore, EvidenceItem, StructuredIndicators } from '../types.js';
 import type { MissionTypeResult } from './mission-type-evaluator.js';
 import { proximityScore } from './icao.js';
 
@@ -24,6 +24,8 @@ interface EvalContext {
   db?: Database.Database;
   /** Pre-evaluated mission_type results keyed by criterion intent string */
   missionTypeOverrides?: Map<string, MissionTypeResult>;
+  /** Structured indicators for this listing (from listing_indicators table) */
+  indicators?: StructuredIndicators | null;
 }
 
 function evalCriterion(listing: ListingForScoring, crit: ProfileCriterion, ctx: EvalContext = {}): CriterionResult {
@@ -131,6 +133,38 @@ function evalCriterion(listing: ListingForScoring, crit: ProfileCriterion, ctx: 
         confidence: null,
       };
     }
+
+    case 'indicator': {
+      // smoh_hours is display-only — not valid as a scoring criterion
+      if (crit.indicatorField === 'smoh_hours') {
+        return { matched: false, note: 'Indicator criterion misconfigured: smoh_hours is display-only', confidence: null };
+      }
+      if (!ctx.indicators || !crit.indicatorField || !crit.indicatorValue) {
+        return { matched: false, note: 'Indicator criterion misconfigured or no indicators available', confidence: null };
+      }
+      const ind = (ctx.indicators as unknown as Record<string, { value: unknown; band?: unknown; confidence: string } | undefined>)[crit.indicatorField];
+      if (!ind) {
+        return { matched: false, note: `Indicator '${crit.indicatorField}' not derived`, confidence: 'low' };
+      }
+      // Banded numeric fields: match against band; all others: match against value
+      const BANDED = new Set(['typical_range', 'typical_cruise_speed', 'typical_fuel_burn', 'passenger_capacity']);
+      const actual = BANDED.has(crit.indicatorField) ? ind.band : ind.value;
+      if (actual === null || actual === undefined) {
+        return { matched: false, note: `${crit.indicatorField} is Unknown`, confidence: 'low' };
+      }
+      const matched = String(actual) === crit.indicatorValue;
+      // Confidence multiplier: High=1.0, Medium=0.75, Low=0.5
+      const multiplier = ind.confidence === 'High' ? 1.0 : ind.confidence === 'Medium' ? 0.75 : 0.5;
+      const confKey = ind.confidence.toLowerCase() as 'high' | 'medium' | 'low';
+      return {
+        matched,
+        note: matched
+          ? `${crit.indicatorField} is ${String(actual)} (confidence: ${ind.confidence})`
+          : `${crit.indicatorField} is ${String(actual)}, expected ${crit.indicatorValue}`,
+        confidence: confKey,
+        partialScore: matched ? multiplier * 100 : 0,
+      };
+    }
   }
 }
 
@@ -178,6 +212,7 @@ function criterionName(crit: ProfileCriterion, index: number): string {
     case 'listing_type': return `Listing type: ${crit.listingType}`;
     case 'proximity': return `Within ${crit.maxDistanceKm} km of home`;
     case 'mission_type': return crit.intent ?? `Mission type #${index + 1}`;
+    case 'indicator': return `Indicator: ${crit.indicatorField ?? '?'} = ${crit.indicatorValue ?? '?'}`;
   }
 }
 
@@ -200,7 +235,8 @@ export function scoreListingAgainstProfiles(
   profiles: InterestProfile[],
   homeLocation?: { lat: number; lon: number } | null,
   db?: Database.Database,
-  missionTypeOverrides?: Map<string, MissionTypeResult>
+  missionTypeOverrides?: Map<string, MissionTypeResult>,
+  indicators?: StructuredIndicators | null
 ): ProfileScoringResult {
   const activeProfiles = profiles.filter((p) => p.weight > 0);
   if (activeProfiles.length === 0) {
@@ -211,6 +247,7 @@ export function scoreListingAgainstProfiles(
     ...(homeLocation ? { homeLat: homeLocation.lat, homeLon: homeLocation.lon } : {}),
     db,
     missionTypeOverrides,
+    indicators,
   };
 
   const profileScores = activeProfiles.map((p) => scoreAgainstProfile(listing, p, ctx));

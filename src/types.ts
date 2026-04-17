@@ -114,11 +114,64 @@ export interface DiscovererOutput {
 }
 
 // ---------------------------------------------------------------------------
+// Feature 007: Structured indicators
+// ---------------------------------------------------------------------------
+
+export type Confidence = 'High' | 'Medium' | 'Low';
+
+export interface StructuredIndicators {
+  // Avionics & IFR
+  avionics_type:           { value: string | null; confidence: Confidence };
+  autopilot_capability:    { value: string | null; confidence: Confidence };
+  ifr_approval:            { value: string | null; confidence: Confidence };
+  ifr_capability_level:    { value: string | null; confidence: Confidence };
+
+  // Engine & Airworthiness
+  engine_state:            { value: string | null; confidence: Confidence };
+  smoh_hours:              { value: number | null; confidence: Confidence };
+  condition_band:          { value: string | null; confidence: Confidence };
+  airworthiness_basis:     { value: string | null; confidence: Confidence };
+
+  // Aircraft Profile (performance = banded)
+  aircraft_type_category:  { value: string | null; confidence: Confidence };
+  passenger_capacity:      { value: number | null; band: string | null; confidence: Confidence };
+  typical_range:           { value: number | null; band: string | null; confidence: Confidence };
+  typical_cruise_speed:    { value: number | null; band: string | null; confidence: Confidence };
+  typical_fuel_burn:       { value: number | null; band: string | null; confidence: Confidence };
+
+  // Costs
+  maintenance_cost_band:   { value: string | null; confidence: Confidence };
+  fuel_cost_band:          { value: string | null; confidence: Confidence };
+  maintenance_program:     { value: string | null; confidence: Confidence };
+
+  // Provenance
+  registration_country:    { value: string | null; confidence: Confidence };
+  ownership_structure:     { value: string | null; confidence: Confidence };
+  hangar_situation:        { value: string | null; confidence: Confidence };
+  redundancy_level:        { value: string | null; confidence: Confidence };
+}
+
+export interface IndicatorDeriverInput {
+  listingId: string;
+  rawAttributes: Record<string, string>;
+  aircraftType?: string | null;
+  make?: string | null;
+  model?: string | null;
+  registration?: string | null;
+}
+
+export interface IndicatorDeriverOutput {
+  listingId: string;
+  indicators?: StructuredIndicators;
+  error?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Feature 002: Profile-based interest scoring
 // ---------------------------------------------------------------------------
 
 export interface ProfileCriterion {
-  type: 'mission_type' | 'make_model' | 'price_range' | 'year_range' | 'listing_type' | 'proximity';
+  type: 'mission_type' | 'make_model' | 'price_range' | 'year_range' | 'listing_type' | 'proximity' | 'indicator';
   weight: number;
   // type-specific fields:
   intent?: string;             // mission_type
@@ -131,6 +184,8 @@ export interface ProfileCriterion {
   yearMax?: number;            // year_range
   listingType?: 'full_ownership' | 'share' | 'any';  // listing_type
   maxDistanceKm?: number;      // proximity
+  indicatorField?: string;     // indicator (e.g. 'engine_state')
+  indicatorValue?: string;     // indicator (e.g. 'Green')
 }
 
 export interface InterestProfile {

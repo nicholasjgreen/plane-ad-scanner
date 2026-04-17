@@ -245,6 +245,80 @@ describe('detail fetcher phase', () => {
   });
 });
 
+describe('indicator deriver phase', () => {
+  it('calls indicatorDeriver for each listing with a pending indicator row', async () => {
+    seedSite(db, 'SiteA', 'https://site-a.com');
+
+    const listingId = randomUUID();
+    db.prepare(
+      `INSERT INTO listings (id, listing_url, source_site, match_score, is_new, date_first_found, date_last_seen, raw_attributes)
+       VALUES (?, 'https://site-a.com/l/1', 'SiteA', 0, 0, ?, ?, '{}')`
+    ).run(listingId, NOW, NOW);
+    // Seed a pending indicator row
+    db.prepare(`INSERT INTO listing_indicators (listing_id, status) VALUES (?, 'pending')`).run(listingId);
+
+    const scraper = vi.fn().mockResolvedValue({ siteName: 'SiteA', listings: [] } as ScraperOutput);
+    const historian = vi.fn().mockResolvedValue({ newCount: 1, updatedCount: 0, listingIds: [listingId] } as HistorianResult);
+    const matcher = vi.fn().mockResolvedValue({ scores: [] } as MatcherOutput);
+    const indicatorDeriver = vi.fn().mockResolvedValue({
+      listingId,
+      indicators: {
+        avionics_type:          { value: 'Glass Cockpit', confidence: 'High' },
+        autopilot_capability:   { value: null, confidence: 'Low' },
+        ifr_approval:           { value: 'IFR Approved', confidence: 'High' },
+        ifr_capability_level:   { value: 'Advanced', confidence: 'High' },
+        engine_state:           { value: 'Green', confidence: 'High' },
+        smoh_hours:             { value: null, confidence: 'Low' },
+        condition_band:         { value: 'Green', confidence: 'High' },
+        airworthiness_basis:    { value: 'CAA EASA', confidence: 'High' },
+        aircraft_type_category: { value: 'Single-Engine Piston', confidence: 'High' },
+        passenger_capacity:     { value: 4, band: '3–4 seats', confidence: 'High' },
+        typical_range:          { value: 700, band: 'Green', confidence: 'High' },
+        typical_cruise_speed:   { value: 122, band: 'Amber', confidence: 'High' },
+        typical_fuel_burn:      { value: 8, band: 'Green', confidence: 'High' },
+        maintenance_cost_band:  { value: 'Green', confidence: 'Medium' },
+        fuel_cost_band:         { value: 'Green', confidence: 'High' },
+        maintenance_program:    { value: null, confidence: 'Low' },
+        registration_country:   { value: 'United Kingdom', confidence: 'High' },
+        ownership_structure:    { value: 'Full Ownership', confidence: 'High' },
+        hangar_situation:       { value: 'Hangared', confidence: 'High' },
+        redundancy_level:       { value: 'Low', confidence: 'High' },
+      },
+    });
+
+    await runScan(db, minimalConfig, { scraper, historian, matcher, indicatorDeriver });
+
+    expect(indicatorDeriver).toHaveBeenCalledOnce();
+    const row = db
+      .prepare(`SELECT status FROM listing_indicators WHERE listing_id = ?`)
+      .get(listingId) as { status: string } | undefined;
+    expect(row?.status).toBe('ready');
+  });
+
+  it('sets status=failed and preserves indicators when indicatorDeriver returns error', async () => {
+    seedSite(db, 'SiteA', 'https://site-a.com');
+
+    const listingId = randomUUID();
+    db.prepare(
+      `INSERT INTO listings (id, listing_url, source_site, match_score, is_new, date_first_found, date_last_seen, raw_attributes)
+       VALUES (?, 'https://site-a.com/l/2', 'SiteA', 0, 0, ?, ?, '{}')`
+    ).run(listingId, NOW, NOW);
+    db.prepare(`INSERT INTO listing_indicators (listing_id, status) VALUES (?, 'pending')`).run(listingId);
+
+    const scraper = vi.fn().mockResolvedValue({ siteName: 'SiteA', listings: [] } as ScraperOutput);
+    const historian = vi.fn().mockResolvedValue({ newCount: 1, updatedCount: 0, listingIds: [listingId] } as HistorianResult);
+    const matcher = vi.fn().mockResolvedValue({ scores: [] } as MatcherOutput);
+    const indicatorDeriver = vi.fn().mockResolvedValue({ listingId, error: 'LLM error' });
+
+    await runScan(db, minimalConfig, { scraper, historian, matcher, indicatorDeriver });
+
+    const row = db
+      .prepare(`SELECT status FROM listing_indicators WHERE listing_id = ?`)
+      .get(listingId) as { status: string } | undefined;
+    expect(row?.status).toBe('failed');
+  });
+});
+
 describe('matcher throws', () => {
   it('retains existing scores and still completes the scan', async () => {
     seedSite(db, 'SiteA', 'https://site-a.com');

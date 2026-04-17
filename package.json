@@ -14,13 +14,18 @@
     "rescore":        "tsx src/cli/rescore.ts",
     "setup-profile":  "tsx src/cli/setup-profile.ts",
     "clear-listings": "tsx src/cli/clear-listings.ts",
+    "reset-sites":    "tsx src/cli/reset-sites.ts",
     "scraper-diag":   "tsx src/cli/scraper-diag.ts",
     "card-diag":      "tsx src/cli/card-diag.ts",
     "test":           "vitest run",
     "test:watch":     "vitest",
     "lint":           "eslint .",
     "lint:fix":       "eslint . --fix",
-    "build":          "tsc --noEmit"
+    "build":          "tsc --noEmit",
+    "_test":          "vitest run",
+    "_lint":          "eslint .",
+    "_lint:fix":      "eslint . --fix",
+    "_build":         "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

@@ -8,6 +8,7 @@ import Database from 'better-sqlite3';
 import cron from 'node-cron';
 import { renderListingsPage, renderSuggestWeightsPage } from './render.js';
 import type { ListingRow, LastScanInfo, ScanError, ListingsPageData, ActiveFilters, EvidenceRow, SuggestWeightsPageData } from './render.js';
+import type { StructuredIndicators } from '../types.js';
 import { runPresenter } from '../agents/presenter.js';
 import { setStatusReady, setStatusFailed } from '../db/listing-ai.js';
 import { logger, loadConfig } from '../config.js';
@@ -44,6 +45,7 @@ interface DbListingRow {
   ai_headline: string | null;      // from listing_ai via LEFT JOIN
   ai_explanation: string | null;   // from listing_ai via LEFT JOIN
   ai_status: string | null;        // from listing_ai via LEFT JOIN
+  indicators_json: string | null;  // from listing_indicators via LEFT JOIN
 }
 
 interface DbScanRun {
@@ -87,7 +89,17 @@ function toListingRow(r: DbListingRow): ListingRow {
     aiStatus: (r.ai_status as ListingRow['aiStatus']) ?? null,
     thumbnailUrl: r.thumbnail_url,
     allImageUrls,
+    indicators: parseIndicators(r.indicators_json),
   };
+}
+
+function parseIndicators(json: string | null): StructuredIndicators | null {
+  if (!json) return null;
+  try {
+    return JSON.parse(json) as StructuredIndicators;
+  } catch {
+    return null;
+  }
 }
 
 interface AppDeps {
@@ -132,9 +144,11 @@ export function createApp(db: Database.Database, adminDeps: AdminRouterDeps = {}
     const listings = (
       db
         .prepare(
-          `SELECT l.*, lai.headline AS ai_headline, lai.explanation AS ai_explanation, lai.status AS ai_status
+          `SELECT l.*, lai.headline AS ai_headline, lai.explanation AS ai_explanation, lai.status AS ai_status,
+                  lind.indicators AS indicators_json
            FROM listings l
            LEFT JOIN listing_ai lai ON lai.listing_id = l.id
+           LEFT JOIN listing_indicators lind ON lind.listing_id = l.id AND lind.status = 'ready'
            ${where}
            ORDER BY l.match_score DESC, l.date_first_found DESC`
         )
