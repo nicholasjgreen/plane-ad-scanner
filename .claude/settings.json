@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(npm install:*)",
-      "Bash(make --dry-run start)"
+      "Bash(make --dry-run start)",
+      "Bash(make build *)",
+      "Bash(docker cp *)",
+      "Bash(docker rm *)"
     ]
   }
 }

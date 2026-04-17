@@ -60,14 +60,43 @@ describe('indicator-deriver agent', () => {
     expect(result.indicators).toBeUndefined();
   });
 
-  it('returns error result when LLM returns JSON missing required fields', async () => {
-    // Missing most fields
+  it('normalises null confidence to "Low"', async () => {
+    const withNullConf = JSON.stringify({ avionics_type: { value: 'Glass Cockpit', confidence: null } });
+    const result = await runIndicatorDeriver(BASE_INPUT, makeAnthropicMock(withNullConf), 'test-model');
+    expect(result.error).toBeUndefined();
+    expect(result.indicators!.avionics_type.confidence).toBe('Low');
+  });
+
+  it('normalises numeric confidence values (e.g. 0.9 → "High")', async () => {
+    const withNumericConf = JSON.stringify({
+      avionics_type: { value: 'Glass Cockpit', confidence: 0.9 },
+    });
+    const anthropic = makeAnthropicMock(withNumericConf);
+    const result = await runIndicatorDeriver(BASE_INPUT, anthropic, 'test-model');
+    expect(result.error).toBeUndefined();
+    expect(result.indicators!.avionics_type.confidence).toBe('High');
+    // boundary: 0.6 → Medium, 0.3 → Low
+    const withMid = JSON.stringify({ avionics_type: { value: null, confidence: 0.6 } });
+    const r2 = await runIndicatorDeriver(BASE_INPUT, makeAnthropicMock(withMid), 'test-model');
+    expect(r2.indicators!.avionics_type.confidence).toBe('Medium');
+    const withLow = JSON.stringify({ avionics_type: { value: null, confidence: 0.3 } });
+    const r3 = await runIndicatorDeriver(BASE_INPUT, makeAnthropicMock(withLow), 'test-model');
+    expect(r3.indicators!.avionics_type.confidence).toBe('Low');
+  });
+
+  it('fills missing fields with null/Low placeholders when LLM omits them', async () => {
+    // Only avionics_type present — the other 19 fields should be backfilled by normalisation
     const partial = JSON.stringify({ avionics_type: { value: 'Glass Cockpit', confidence: 'High' } });
     const anthropic = makeAnthropicMock(partial);
     const result = await runIndicatorDeriver(BASE_INPUT, anthropic, 'test-model');
     expect(result.listingId).toBe(LISTING_ID);
-    expect(result.error).toBeTruthy();
-    expect(result.indicators).toBeUndefined();
+    expect(result.error).toBeUndefined();
+    expect(result.indicators).toBeDefined();
+    // The provided field is preserved
+    expect(result.indicators!.avionics_type.value).toBe('Glass Cockpit');
+    // A missing field is backfilled with null and Low confidence
+    expect(result.indicators!.engine_state.value).toBeNull();
+    expect(result.indicators!.engine_state.confidence).toBe('Low');
   });
 
   it('returns all-null indicators (not error) for empty rawAttributes', async () => {

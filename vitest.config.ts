@@ -4,5 +4,12 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['src/cli/**'],   // CLI entry points are not unit-testable
+      reporter: ['text', 'html'],
+      reportsDirectory: './coverage',
+    },
   },
 });

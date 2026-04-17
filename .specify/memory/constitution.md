@@ -1,21 +1,39 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.2.0 → 1.3.0 (MINOR: new Principle VIII added — Living Documentation)
-Modified principles: none
+Version change: 1.3.0 → 1.4.0 (MINOR: Principle IX added; Principles II and V materially amended)
+
+Modified principles:
+  - Principle II. Resilience over Completeness
+      "Retry logic is OPTIONAL" removed. LLM/external API calls now MUST include retry logic
+      co-located with the call site. Outer-wrapper retry is explicitly disallowed as the
+      sole mechanism (it cannot observe errors swallowed by agent-level try/catch).
+  - Principle V. Test-First for Core Logic
+      Unhappy path coverage elevated to mandatory. Data quality handling (rendering of
+      absent/malformed data) is now explicitly required to have unit tests. Silent drops
+      are declared bugs, not acceptable omissions.
+
 Added sections:
-  - Principle VIII. Living Documentation (new)
+  - Principle IX. Data Quality & Defensive Handling (new)
+
 Removed sections: none
+
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ no changes needed (Constitution Check is generic)
-  - .specify/templates/spec-template.md ✅ no changes needed
-  - .specify/templates/tasks-template.md ✅ no changes needed (quickstart.md already tracked)
-  - README.md ✅ updated with setup/run instructions per Principle VIII
+  - .specify/templates/plan-template.md ✅ no change needed (Constitution Check is dynamic)
+  - .specify/templates/spec-template.md ✅ no change needed (edge cases section already present)
+  - .specify/templates/tasks-template.md ✅ no change needed (unhappy-path tasks are now
+      constitution-mandated; tasks command will generate them per Principle V)
+  - README.md ✅ no change needed
+
 Deferred TODOs: none
-Context: User requested explicit governance around keeping documentation current, specifically
-that the README must always contain enough operational context to run the tool. Principle VIII
-formalises this and ties it to the speckit workflow (quickstart.md is the per-feature source
-of truth; README is the project-level entry point that must stay non-trivial at all times).
+
+Context: Real incidents drove these changes:
+  1. renderIndicatorRow silently returned '' for undefined indicator fields — no test caught
+     it because unhappy paths were not constitutionally required.
+  2. Indicator deriver 429 retry was implemented in an outer orchestrator wrapper, but the
+     agent's top-level try/catch swallowed the error before the wrapper could see it. Retry
+     MUST be co-located with the API call.
+  3. Principle IX formalises "make data quality problems visible" as a project-wide rule.
 -->
 
 # plane-ad-scanner Constitution
@@ -45,7 +63,15 @@ The tool runs unattended. A partial result is always better than a crash:
 - All errors MUST be surfaced (logged + included in the notification summary where applicable).
 - State MUST be persisted durably after each successful scan so a crash mid-run does not
   duplicate notifications.
-- Retry logic is OPTIONAL; logging the failure and moving on is acceptable.
+- **LLM and external API calls MUST include retry logic for transient failures** (e.g.,
+  rate-limit 429 responses). Logging and moving on is acceptable only for non-transient
+  errors (e.g., a scraper returning a permanent 404).
+- **Retry logic MUST be co-located with the API call it guards.** An outer wrapper is not
+  sufficient when the inner call site has its own error handling (try/catch) that can swallow
+  the raw error before the wrapper sees it. The retry loop MUST wrap the specific
+  `anthropic.messages.create` (or equivalent) call directly.
+- Retry MUST respect `Retry-After` headers where present, and MUST cap the total number of
+  attempts (default: 4) and the per-attempt wait time to prevent indefinite blocking.
 
 ### III. Observability
 
@@ -83,6 +109,18 @@ MUST be test-driven:
 - I/O-bound code (scrapers, notifiers): integration or smoke tests acceptable; full TDD not
   required.
 - No test infrastructure complexity beyond what the project already uses.
+
+**Unhappy path coverage is mandatory, not optional:**
+
+- For every function or rendering path that handles potentially absent, null, or malformed
+  data, at least one test MUST exercise each distinct failure/absent state.
+- Data quality handling MUST have explicit unit tests. A silent drop — returning an empty
+  string or `undefined` instead of a visible "Not derived" / "Unknown" indicator — is a bug
+  and MUST be caught by tests, not discovered at runtime.
+- Retry and error-recovery paths MUST have unit tests that inject the failure condition
+  (e.g., a mock that throws 429 on the first call) and assert the correct outcome.
+- "Happy path only" coverage is not acceptable for any module that touches external data,
+  LLM responses, or user-facing rendering.
 
 ### VI. Agent Architecture
 
@@ -162,7 +200,36 @@ a feature or release cycle. Documentation that is wrong is worse than no documen
 - During active implementation (speckit.implement), the README and quickstart.md MUST be
   updated before the feature is considered complete — not as a separate cleanup task.
 - Principle VIII compliance MUST be verified in the Constitution Check section of each
-  plan.md (alongside Principles I–VII).
+  plan.md (alongside Principles I–IX).
+
+### IX. Data Quality & Defensive Handling
+
+All data derived from external sources (scrapers, LLM responses, third-party APIs, the
+database) MUST be treated as potentially absent, partial, or malformed at every layer:
+
+**Visibility — never silently drop data quality problems:**
+- When an expected value is absent or cannot be derived, the absence MUST be made visible to
+  the consumer of that data. In UI/rendered output: display "Not derived", "Unknown", or an
+  equivalent explicit label — never an empty string, a blank cell, or a missing element.
+- In code: a missing field MUST NOT be silently swallowed by an early `return ''` or
+  `return undefined`. The absent state is information and MUST be propagated or rendered.
+- In logs: a value that fails validation or cannot be parsed MUST produce a log entry at
+  WARN level or above, including the listing/entity ID and the field name.
+
+**Validation — schema-first, not trust-first:**
+- LLM responses MUST be parsed and validated against a schema before any downstream code
+  uses them. Schema validation failures MUST be logged and treated as a `failed` outcome
+  for that entity, not silently skipped.
+- Database reads that may return `null` or an unexpected type MUST be handled explicitly —
+  not assumed to always be present.
+
+**Testing — data quality paths are first-class:**
+- Every rendering, formatting, or transformation function that accepts nullable or optional
+  fields MUST have at least one test for each distinct absent/invalid state (null value,
+  undefined field, empty string, schema validation failure).
+- These tests MUST be written before the implementation (per Principle V's TDD requirement).
+- "Works when data is present" is necessary but not sufficient — the absent/malformed cases
+  are where bugs hide.
 
 ## Technology Stack
 
@@ -197,10 +264,10 @@ Deviations from this stack MUST be justified in the Complexity Tracking table.
 - Amendments require: description of the change, version bump rationale, and update to this
   file.
 - All implementation plans MUST include a Constitution Check section that verifies compliance
-  with Principles I–VIII before Phase 0 research begins and again after Phase 1 design.
+  with Principles I–IX before Phase 0 research begins and again after Phase 1 design.
 - Complexity violations are permitted only when documented in the plan's Complexity Tracking
   table.
 - The constitution is the canonical runtime guidance document for AI-assisted development
   sessions.
 
-**Version**: 1.3.0 | **Ratified**: 2026-03-29 | **Last Amended**: 2026-04-04
+**Version**: 1.4.0 | **Ratified**: 2026-03-29 | **Last Amended**: 2026-04-17

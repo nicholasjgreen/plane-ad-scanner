@@ -14,10 +14,14 @@
     "rescore":        "tsx src/cli/rescore.ts",
     "setup-profile":  "tsx src/cli/setup-profile.ts",
     "clear-listings": "tsx src/cli/clear-listings.ts",
-    "reset-sites":    "tsx src/cli/reset-sites.ts",
+    "reset-sites":       "tsx src/cli/reset-sites.ts",
+    "reset-indicators":    "tsx src/cli/reset-indicators.ts",
+    "derive-indicators":   "tsx src/cli/derive-indicators.ts",
+    "indicator-diag":      "tsx src/cli/indicator-diag.ts",
     "scraper-diag":   "tsx src/cli/scraper-diag.ts",
     "card-diag":      "tsx src/cli/card-diag.ts",
     "test":           "vitest run",
+    "test:coverage":  "vitest run --coverage",
     "test:watch":     "vitest",
     "lint":           "eslint .",
     "lint:fix":       "eslint . --fix",
@@ -56,6 +60,7 @@
     "prettier": "^3.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.0.0",
+    "@vitest/coverage-v8": "^2.0.0"
   }
 }

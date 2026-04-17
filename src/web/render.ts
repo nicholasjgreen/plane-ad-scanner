@@ -166,69 +166,81 @@ function confidenceBadge(conf: Confidence): string {
   return `<span class="conf-badge ${cls}">${conf}</span>`;
 }
 
-function renderIndicatorRow(label: string, ind: { value: unknown; band?: unknown; confidence: Confidence } | undefined): string {
-  if (!ind) return '';
+// Returns a CSS modifier class for RAG (Red/Amber/Green) string values and High/Medium/Low
+function ragClass(v: unknown): string {
+  const s = typeof v === 'string' ? v.toLowerCase() : '';
+  if (s === 'green' || s === 'high') return 'ind-val--green';
+  if (s === 'amber' || s === 'medium') return 'ind-val--amber';
+  if (s === 'red' || s === 'low') return 'ind-val--red';
+  return '';
+}
+
+function renderIndicatorRow(icon: string, label: string, ind: { value: unknown; band?: unknown; confidence: Confidence } | undefined): string {
+  const labelHtml = `<span class="ind-label"><span class="ind-icon">${icon}</span>${esc(label)}</span>`;
+  if (!ind) return `<div class="ind-row">${labelHtml}<span class="ind-val ind-val--not-derived">Not derived</span><span></span></div>`;
   const isUnknown = ind.value === null || ind.value === undefined;
   const isBanded = 'band' in ind;
   let valText: string;
   if (isUnknown) {
-    valText = '<span class="ind-val ind-val--unknown">Unknown</span>';
+    valText = '<span class="ind-val ind-val--unknown">—</span>';
   } else if (isBanded && ind.band !== null) {
-    valText = `<span class="ind-val">${esc(String(ind.band))}</span> <span class="ind-val--raw">(${esc(String(ind.value))})</span>`;
+    const cls = ragClass(ind.band);
+    valText = `<span class="ind-val ${cls}">${esc(String(ind.band))}</span> <span class="ind-val--raw">(${esc(String(ind.value))})</span>`;
   } else {
-    valText = `<span class="ind-val">${esc(String(ind.value))}</span>`;
+    const cls = ragClass(ind.value);
+    valText = `<span class="ind-val ${cls}">${esc(String(ind.value))}</span>`;
   }
-  const badge = isUnknown ? '' : confidenceBadge(ind.confidence);
-  return `<div class="ind-row"><span class="ind-label">${esc(label)}</span>${valText}${badge}</div>`;
+  const badge = isUnknown ? '<span></span>' : confidenceBadge(ind.confidence);
+  return `<div class="ind-row">${labelHtml}${valText}${badge}</div>`;
 }
 
 function renderIndicatorGroups(indicators: StructuredIndicators | null): string {
-  if (!indicators) return '';
+  const ind = indicators;
 
   const groups: Array<{ title: string; rows: string }> = [
     {
-      title: 'Avionics &amp; IFR',
+      title: '📡 Avionics &amp; IFR',
       rows: [
-        renderIndicatorRow('Avionics', indicators.avionics_type),
-        renderIndicatorRow('Autopilot', indicators.autopilot_capability),
-        renderIndicatorRow('IFR Approval', indicators.ifr_approval),
-        renderIndicatorRow('IFR Capability', indicators.ifr_capability_level),
+        renderIndicatorRow('🖥️', 'Avionics', ind?.avionics_type),
+        renderIndicatorRow('🤖', 'Autopilot', ind?.autopilot_capability),
+        renderIndicatorRow('✅', 'IFR Approval', ind?.ifr_approval),
+        renderIndicatorRow('📶', 'IFR Capability', ind?.ifr_capability_level),
       ].join(''),
     },
     {
-      title: 'Engine &amp; Airworthiness',
+      title: '⚙️ Engine &amp; Airworthiness',
       rows: [
-        renderIndicatorRow('Engine State', indicators.engine_state),
-        renderIndicatorRow('SMOH Hours', indicators.smoh_hours),
-        renderIndicatorRow('Condition', indicators.condition_band),
-        renderIndicatorRow('Airworthiness', indicators.airworthiness_basis),
+        renderIndicatorRow('🔧', 'Engine State', ind?.engine_state),
+        renderIndicatorRow('⏱️', 'SMOH Hours', ind?.smoh_hours),
+        renderIndicatorRow('🔍', 'Condition', ind?.condition_band),
+        renderIndicatorRow('📜', 'Airworthiness', ind?.airworthiness_basis),
       ].join(''),
     },
     {
-      title: 'Aircraft Profile',
+      title: '✈️ Aircraft Profile',
       rows: [
-        renderIndicatorRow('Type Category', indicators.aircraft_type_category),
-        renderIndicatorRow('Passengers', indicators.passenger_capacity),
-        renderIndicatorRow('Typical Range', indicators.typical_range),
-        renderIndicatorRow('Cruise Speed', indicators.typical_cruise_speed),
-        renderIndicatorRow('Fuel Burn', indicators.typical_fuel_burn),
+        renderIndicatorRow('🏷️', 'Type Category', ind?.aircraft_type_category),
+        renderIndicatorRow('👥', 'Passengers', ind?.passenger_capacity),
+        renderIndicatorRow('📏', 'Typical Range', ind?.typical_range),
+        renderIndicatorRow('💨', 'Cruise Speed', ind?.typical_cruise_speed),
+        renderIndicatorRow('⛽', 'Fuel Burn', ind?.typical_fuel_burn),
       ].join(''),
     },
     {
-      title: 'Costs',
+      title: '💰 Costs',
       rows: [
-        renderIndicatorRow('Maintenance Cost', indicators.maintenance_cost_band),
-        renderIndicatorRow('Fuel Cost', indicators.fuel_cost_band),
-        renderIndicatorRow('Maintenance Program', indicators.maintenance_program),
+        renderIndicatorRow('🔩', 'Maintenance Cost', ind?.maintenance_cost_band),
+        renderIndicatorRow('⛽', 'Fuel Cost', ind?.fuel_cost_band),
+        renderIndicatorRow('📋', 'Maintenance Program', ind?.maintenance_program),
       ].join(''),
     },
     {
-      title: 'Provenance',
+      title: '🌍 Provenance',
       rows: [
-        renderIndicatorRow('Registration Country', indicators.registration_country),
-        renderIndicatorRow('Ownership', indicators.ownership_structure),
-        renderIndicatorRow('Hangar', indicators.hangar_situation),
-        renderIndicatorRow('Redundancy', indicators.redundancy_level),
+        renderIndicatorRow('🗺️', 'Registration Country', ind?.registration_country),
+        renderIndicatorRow('🏢', 'Ownership', ind?.ownership_structure),
+        renderIndicatorRow('🏠', 'Hangar', ind?.hangar_situation),
+        renderIndicatorRow('🔄', 'Redundancy', ind?.redundancy_level),
       ].join(''),
     },
   ];
@@ -236,7 +248,7 @@ function renderIndicatorGroups(indicators: StructuredIndicators | null): string 
   const groupHtml = groups
     .map(
       (g) => `
-      <details class="ind-group">
+      <details class="ind-group" open>
         <summary class="ind-group__title">${g.title}</summary>
         <div class="ind-group__body">${g.rows}</div>
       </details>`
@@ -481,6 +493,29 @@ export function renderListingsPage(data: ListingsPageData): string {
     .sw-actions { display: flex; gap: .5rem; }
     .btn-accept { padding: .2rem .7rem; background: #198754; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: .8rem; }
     .btn-reject { padding: .2rem .7rem; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: .8rem; }
+    /* Structured indicators */
+    .ind-groups { margin-top: .75rem; border-top: 2px solid #e9ecef; padding-top: .5rem; display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+    .ind-group { border: 1px solid #e9ecef; border-radius: 5px; overflow: hidden; }
+    .ind-group__title { display: flex; align-items: center; gap: .35rem; padding: .4rem .65rem; cursor: pointer; font-weight: 600; font-size: .8rem; background: #f8f9fa; color: #495057; list-style: none; user-select: none; }
+    .ind-group__title::-webkit-details-marker { display: none; }
+    .ind-group[open] .ind-group__title { border-bottom: 1px solid #e9ecef; }
+    .ind-group__body { padding: .15rem .4rem .25rem; }
+    .ind-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: .15rem .5rem; padding: .25rem .25rem; border-bottom: 1px solid #f8f9fa; font-size: .8rem; }
+    .ind-row:last-child { border-bottom: none; }
+    .ind-label { color: #6c757d; display: flex; align-items: center; gap: .3rem; }
+    .ind-icon { font-size: .85rem; flex-shrink: 0; }
+    .ind-val { font-weight: 600; color: #212529; }
+    .ind-val--green { color: #146c43; }
+    .ind-val--amber { color: #b45309; }
+    .ind-val--red { color: #b02a37; }
+    .ind-val--unknown { color: #adb5bd; font-weight: normal; }
+    .ind-val--not-derived { color: #ced4da; font-style: italic; font-weight: normal; }
+    .ind-val--raw { color: #6c757d; font-weight: normal; font-size: .75rem; }
+    .conf-badge { font-size: .65rem; padding: .1em .35em; border-radius: 3px; font-weight: 700; white-space: nowrap; }
+    .conf--high { background: #d1e7dd; color: #0a3622; }
+    .conf--medium { background: #fff3cd; color: #664d03; }
+    .conf--low { background: #f8d7da; color: #58151c; }
+    @media (max-width: 600px) { .ind-groups { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>

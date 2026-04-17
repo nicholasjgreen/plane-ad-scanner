@@ -61,21 +61,77 @@ function isValidConfidence(v: unknown): v is Confidence {
   return v === 'High' || v === 'Medium' || v === 'Low';
 }
 
-function validateIndicators(raw: unknown): StructuredIndicators | null {
-  if (typeof raw !== 'object' || raw === null) return null;
+// Normalise confidence: accept any capitalisation ("high" → "High"), numeric 0–1 (0.8 → "High"),
+// or null/missing (→ "Low" as a safe default)
+function normaliseConfidence(v: unknown): Confidence | unknown {
+  if (v === null || v === undefined) return 'Low';
+  if (typeof v === 'number') {
+    if (v >= 0.8) return 'High';
+    if (v >= 0.5) return 'Medium';
+    return 'Low';
+  }
+  if (typeof v !== 'string') return v;
+  const cap = v.charAt(0).toUpperCase() + v.slice(1).toLowerCase();
+  if (cap === 'High' || cap === 'Medium' || cap === 'Low') return cap as Confidence;
+  return v;
+}
+
+// Normalise a value field: treat the string "Unknown" (any case) as null
+function normaliseValue(v: unknown): unknown {
+  if (typeof v === 'string' && v.toLowerCase() === 'unknown') return null;
+  return v;
+}
+
+// Mutates parsed LLM output in-place to fix common model quirks before strict validation
+function normaliseLlmResponse(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) return raw;
+  const obj = raw as Record<string, unknown>;
+  for (const field of ALL_FIELDS) {
+    const ind = obj[field];
+    if (typeof ind !== 'object' || ind === null) {
+      // Field entirely absent (or scalar) — insert a null placeholder with Low confidence
+      obj[field] = BANDED_FIELDS.has(field)
+        ? { value: null, band: null, confidence: 'Low' }
+        : { value: null, confidence: 'Low' };
+      continue;
+    }
+    const indObj = ind as Record<string, unknown>;
+    indObj.confidence = normaliseConfidence(indObj.confidence);
+    indObj.value = normaliseValue(indObj.value);
+    if (BANDED_FIELDS.has(field) && !('band' in indObj)) {
+      indObj.band = null;
+    }
+  }
+  return raw;
+}
+
+function validateIndicators(raw: unknown, listingId: string): StructuredIndicators | null {
+  if (typeof raw !== 'object' || raw === null) {
+    logger.warn({ listingId, rawType: typeof raw }, 'Indicator deriver: response is not an object');
+    return null;
+  }
   const obj = raw as Record<string, unknown>;
 
   for (const field of ALL_FIELDS) {
     const ind = obj[field];
-    if (typeof ind !== 'object' || ind === null) return null;
+    if (typeof ind !== 'object' || ind === null) {
+      logger.warn({ listingId, field, ind }, 'Indicator deriver: field missing or non-object');
+      return null;
+    }
     const indObj = ind as Record<string, unknown>;
-    // All fields need confidence
-    if (!isValidConfidence(indObj.confidence)) return null;
-    // value can be string|number|null
-    if (indObj.value !== null && typeof indObj.value !== 'string' && typeof indObj.value !== 'number') return null;
-    // Banded fields additionally need band (string|null)
+    if (!isValidConfidence(indObj.confidence)) {
+      logger.warn({ listingId, field, confidence: indObj.confidence }, 'Indicator deriver: invalid confidence value');
+      return null;
+    }
+    if (indObj.value !== null && typeof indObj.value !== 'string' && typeof indObj.value !== 'number') {
+      logger.warn({ listingId, field, valueType: typeof indObj.value, value: indObj.value }, 'Indicator deriver: invalid value type');
+      return null;
+    }
     if (BANDED_FIELDS.has(field)) {
-      if (indObj.band !== null && typeof indObj.band !== 'string') return null;
+      if (indObj.band !== null && typeof indObj.band !== 'string') {
+        logger.warn({ listingId, field, band: indObj.band }, 'Indicator deriver: invalid band value');
+        return null;
+      }
     }
   }
   return raw as StructuredIndicators;
@@ -220,7 +276,8 @@ export async function runIndicatorDeriver(
       return { listingId, error: 'Failed to parse JSON from LLM response' };
     }
 
-    const indicators = validateIndicators(parsed);
+    const normalised = normaliseLlmResponse(parsed);
+    const indicators = validateIndicators(normalised, listingId);
     if (!indicators) {
       return { listingId, error: 'LLM response failed schema validation (missing or invalid fields)' };
     }
