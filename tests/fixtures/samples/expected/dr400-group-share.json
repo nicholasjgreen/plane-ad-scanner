@@ -1,0 +1,21 @@
+{
+  "_fixture": "dr400-group-share.txt",
+  "_notes": "Robin DR400/180, 1/5 group share, KAP 140 AP, GNS 430 (non-WAAS), IFR equipped, hangared",
+  "required": {
+    "aircraft_type_category": "Single Piston",
+    "ifr_approval": "IFR Approved",
+    "airworthiness_basis": "Type Certificated",
+    "registration_country": "United Kingdom",
+    "ownership_structure": "Flying Club Share",
+    "redundancy_level": "Low"
+  },
+  "flexible": {
+    "avionics_type": ["Hybrid", "Steam Gauges"],
+    "autopilot_capability": ["Basic", "Modern Integrated"],
+    "ifr_capability_level": ["Basic", "Enhanced"],
+    "engine_state": ["Amber", "Green"],
+    "condition_band": ["Green", "Amber"],
+    "hangar_situation": ["Hangared", "T-Hangar"]
+  },
+  "non_null": ["passenger_capacity", "typical_range", "typical_cruise_speed", "typical_fuel_burn"]
+}

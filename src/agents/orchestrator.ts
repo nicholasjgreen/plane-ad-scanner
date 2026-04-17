@@ -72,10 +72,11 @@ export interface OrchestratorDeps {
   matcher?: (listings: ListingForScoring[], criteria: Criterion[], profiles?: InterestProfile[], db?: Database.Database, homeLocation?: { lat: number; lon: number } | null, scoringClient?: Anthropic | OpenAI | null, scoringModel?: string | null) => Promise<MatcherOutput>;
   presenter?: (input: PresenterInput, anthropic: Anthropic, model: string) => Promise<PresenterOutput>;
   detailFetcher?: (listingId: string, listingUrl: string, sourceSite: string) => Promise<DetailFetchResult>;
-  indicatorDeriver?: (input: IndicatorDeriverInput, anthropic: Anthropic, model: string) => Promise<IndicatorDeriverOutput>;
+  indicatorDeriver?: (input: IndicatorDeriverInput, client: Anthropic | OpenAI, model: string) => Promise<IndicatorDeriverOutput>;
   presenterModel?: string;
   ollamaClient?: OpenAI;
   ollamaScraperModel?: string;
+  ollamaIndicatorModel?: string;
   scoringClient?: Anthropic | OpenAI | null;
   scoringModel?: string | null;
   profiles?: InterestProfile[];
@@ -397,7 +398,12 @@ export async function runScan(
   const pendingIndicatorIds = getPendingOrStaleListingIds(db);
   if (pendingIndicatorIds.length > 0) {
     const indicatorDeriverFn = deps.indicatorDeriver ?? runIndicatorDeriver;
-    const indicatorModel = config.agent.matcher_model;
+    const ollamaIndicatorModel = deps.ollamaIndicatorModel ?? config.ollama?.indicator_model;
+    const indicatorClient: Anthropic | OpenAI =
+      deps.ollamaClient && ollamaIndicatorModel ? deps.ollamaClient : anthropic;
+    const indicatorModel = (deps.ollamaClient && ollamaIndicatorModel)
+      ? ollamaIndicatorModel
+      : config.agent.matcher_model;
 
     interface DbIndicatorRow {
       id: string;
@@ -430,7 +436,7 @@ export async function runScan(
           };
 
           const result = await withRateLimitRetry(
-            () => indicatorDeriverFn(input, anthropic, indicatorModel),
+            () => indicatorDeriverFn(input, indicatorClient, indicatorModel),
             4,
             `indicator:${listingId}`
           );

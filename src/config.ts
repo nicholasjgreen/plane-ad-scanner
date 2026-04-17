@@ -74,6 +74,7 @@ const ConfigSchema = z
         verification_model: z.string().min(1).optional(),
         scraper_model: z.string().min(1).optional(),
         scoring_model: z.string().min(1).optional(),
+        indicator_model: z.string().min(1).optional(),
       })
       .nullable()
       .default(null),

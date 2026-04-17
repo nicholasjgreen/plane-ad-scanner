@@ -1,0 +1,34 @@
+Cirrus SR20 G2 - G-CHPG - 1/4 share, Dunkeswell
+
+Aircraft Type: Single Engine Fixed Wing
+Year: 2006
+Make: Cirrus Design Corporation
+Model: SR20 G2
+Reg Number: G-CHPG
+Airframe Hours: 1119
+Engine Make: Continental IO-360-ES
+Engine Hours: 96 SMOH (overhauled 2022)
+Prop Make: Hartzell CS
+Prop Hours: 96
+Prop Overhaul: 2022
+ARC: Valid to March 2026
+Annual: Completed March 2024
+
+Price: £30,000 (1/4 share, total aircraft value ~£120,000)
+
+Avionics:
+- Avidyne Entegra glass cockpit (dual 10.3" displays, PFD + MFD)
+- Avidyne IFD440 NAV/COM/GPS x2
+- S-TEC 55X two-axis autopilot with altitude hold
+- Avidyne AXP340 ADS-B Out (1090ES Mode S ES)
+Full IFR panel: AHRS, ADC, HSI, altimeter, VSI, TC.
+
+UK CofA. Type Certificated. IFR approved aircraft.
+
+Based at Dunkeswell Aerodrome (EGTU). 1/4 share in group of 4 owners. Monthly costs approx £250/month including hangar, insurance, maintenance reserve.
+
+CAPS ballistic parachute system. Heated pitot.
+
+Notes: Well-maintained SR20 in a friendly 4-way syndicate. Avidyne Entegra glass cockpit and S-TEC 55X autopilot make it a capable IFR cross-country aircraft. Engine recently overhauled. ADS-B Out compliant.
+
+Contact: 07800 123456

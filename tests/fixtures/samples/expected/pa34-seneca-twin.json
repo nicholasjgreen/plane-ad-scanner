@@ -1,0 +1,21 @@
+{
+  "_fixture": "pa34-seneca-twin.txt",
+  "_notes": "Piper PA34 Seneca twin, GNS 430W WAAS, KFC 150 AP, IFR approved, hangared, full ownership",
+  "required": {
+    "aircraft_type_category": "Twin Piston",
+    "ifr_approval": "IFR Approved",
+    "airworthiness_basis": "Type Certificated",
+    "registration_country": "United Kingdom",
+    "ownership_structure": "Full Ownership",
+    "redundancy_level": "High"
+  },
+  "flexible": {
+    "avionics_type": ["Hybrid", "Steam Gauges"],
+    "autopilot_capability": ["Modern Integrated", "Basic"],
+    "ifr_capability_level": ["Enhanced", "Basic"],
+    "engine_state": ["Green", "Amber"],
+    "condition_band": ["Green", "Amber"],
+    "hangar_situation": ["Hangared", "T-Hangar"]
+  },
+  "non_null": ["passenger_capacity", "typical_range", "typical_cruise_speed", "typical_fuel_burn", "smoh_hours"]
+}

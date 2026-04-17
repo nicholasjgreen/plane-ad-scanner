@@ -1,0 +1,21 @@
+{
+  "_fixture": "rv7-experimental.txt",
+  "_notes": "Vans RV-7, LAA permit, Dynon SkyView glass, autopilot, VFR only (no ILS/VOR), hangared, full ownership",
+  "required": {
+    "aircraft_type_category": "Single Piston",
+    "avionics_type": "Glass Cockpit",
+    "ifr_approval": "VFR Only",
+    "airworthiness_basis": "Experimental",
+    "registration_country": "United Kingdom",
+    "ownership_structure": "Full Ownership",
+    "redundancy_level": "Low"
+  },
+  "flexible": {
+    "autopilot_capability": ["Modern Integrated", "Basic"],
+    "ifr_capability_level": ["Basic", null],
+    "engine_state": ["Green", "Amber"],
+    "condition_band": ["Green"],
+    "hangar_situation": ["Hangared", "T-Hangar"]
+  },
+  "non_null": ["passenger_capacity", "typical_range", "typical_cruise_speed", "typical_fuel_burn"]
+}

@@ -1,0 +1,21 @@
+{
+  "_fixture": "pa28-180-ifr-basic.txt",
+  "_notes": "Piper PA28-180, full IFR panel, S-Tec altitude hold (wing leveller), tied-down, full ownership",
+  "required": {
+    "aircraft_type_category": "Single Piston",
+    "ifr_approval": "IFR Approved",
+    "airworthiness_basis": "Type Certificated",
+    "registration_country": "United Kingdom",
+    "ownership_structure": "Full Ownership",
+    "redundancy_level": "Low"
+  },
+  "flexible": {
+    "avionics_type": ["Steam Gauges", "Hybrid"],
+    "autopilot_capability": ["None", "Basic"],
+    "ifr_capability_level": ["Basic", "Enhanced"],
+    "engine_state": ["Amber", "Red"],
+    "condition_band": ["Amber", "Green"],
+    "hangar_situation": ["Tie-down", "Tied-down", null]
+  },
+  "non_null": ["passenger_capacity", "typical_range", "typical_cruise_speed", "typical_fuel_burn"]
+}

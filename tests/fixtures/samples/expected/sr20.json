@@ -1,0 +1,20 @@
+{
+  "_fixture": "sr20.txt",
+  "_notes": "Cirrus SR20 G2, 1/4 share, Avidyne Entegra glass, S-TEC 55X autopilot, UK registered",
+  "required": {
+    "aircraft_type_category": "Single Piston",
+    "avionics_type": "Glass Cockpit",
+    "ifr_approval": "IFR Approved",
+    "ifr_capability_level": "Advanced",
+    "airworthiness_basis": "Type Certificated",
+    "registration_country": "United Kingdom",
+    "ownership_structure": "Partnership"
+  },
+  "flexible": {
+    "autopilot_capability": ["Basic", "Modern Integrated"],
+    "engine_state": ["Amber", "Green"],
+    "condition_band": ["Green", "Amber"],
+    "redundancy_level": ["Medium", "Low"]
+  },
+  "non_null": ["passenger_capacity", "typical_range", "typical_cruise_speed", "typical_fuel_burn", "maintenance_cost_band", "fuel_cost_band"]
+}

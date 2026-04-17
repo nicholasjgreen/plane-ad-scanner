@@ -1,0 +1,30 @@
+Piper PA34-200T Seneca II - G-BPFT - Full ownership, Cambridge
+
+Aircraft Type: Twin Engine Fixed Wing
+Year: 1980
+Make: Piper
+Model: PA34-200T Seneca II
+Reg Number: G-BPFT
+Airframe Hours: 6120
+Engine Make: Continental TSIO-360-E (LH) / Continental LTSIO-360-E (RH)
+Engine Hours: LH 280 SMOH / RH 440 SMOH (both overhauled by Continental authorised shop)
+Prop Make: McCauley constant speed (both)
+ARC: Valid to May 2026
+Annual: Completed May 2024
+
+Price: £72,000
+
+Avionics:
+- Garmin GNS 430W WAAS GPS/NAV/COMM
+- Garmin SL30 NAV/COMM (backup)
+- Garmin GTX 330ES ADS-B Out (Mode S ES)
+- KFC 150 two-axis autopilot with altitude hold
+- Narco MK-12D VOR/ILS (backup nav)
+- RMI/ADF
+- Full IFR panel, gyros, AI, DI, HSI
+
+UK CofA. Type Certificated. Fully IFR rated and equipped.
+
+Based at Cambridge Airport (EGSC). Hangar 14B. Single owner for 8 years.
+
+Notes: Economical turbocharged twin with both engines recently overhauled. GNS 430W WAAS approach capable. KFC 150 is a capable coupled autopilot. Twin engine redundancy. Regular charter maintenance standard. Ideal IFR cross-country or European touring aircraft.

@@ -18,6 +18,7 @@
     "reset-indicators":    "tsx src/cli/reset-indicators.ts",
     "derive-indicators":   "tsx src/cli/derive-indicators.ts",
     "indicator-diag":      "tsx src/cli/indicator-diag.ts",
+    "indicator-bench":     "tsx src/cli/indicator-bench.ts",
     "scraper-diag":   "tsx src/cli/scraper-diag.ts",
     "card-diag":      "tsx src/cli/card-diag.ts",
     "test":           "vitest run",

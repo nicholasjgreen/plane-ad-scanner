@@ -1,0 +1,32 @@
+SOCATA TB20 Trinidad GT - G-DIGE - Full ownership, Elstree
+
+Aircraft Type: Single Engine Fixed Wing
+Year: 2001
+Make: SOCATA
+Model: TB20 Trinidad GT
+Reg Number: G-DIGE
+Airframe Hours: 2140
+Engine Make: Lycoming IO-540-C4D5D
+Engine Hours: 610 SMOH (OH at 2001 TBO, major completed 2019)
+Prop Make: Hartzell constant speed
+ARC: Valid to November 2025
+Annual: Completed November 2024
+
+Price: £89,000
+
+Avionics:
+- Garmin GNS 530W WAAS GPS/NAV/COMM (IFR approved)
+- Garmin GNS 430W WAAS (backup)
+- Garmin GTX 345 ADS-B In/Out (Mode S ES)
+- S-TEC System 55X two-axis autopilot with altitude hold and VS mode
+- Garmin GMX 200 MFD moving map
+- Sandel SN3308 EHSI
+- Altitude alert
+Full IFR panel. AI, DI, altimeter, VSI, TC. Hot prop.
+
+UK CofA. Type Certificated. Full IFR rated aircraft.
+
+Based at Elstree Aerodrome (EGTR), hangared in private T-hangar. Private ownership, single owner since import.
+
+Notes: Well-specified retractable with twin WAAS navigators and S-TEC 55X. The GNS 530W/430W combination makes this a capable IFR cross-country aircraft. ADS-B compliant. Hot prop for known icing exposure. Approx 1500 hours to next overhaul.
+

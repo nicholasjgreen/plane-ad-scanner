@@ -10,13 +10,27 @@
  */
 import { readFileSync } from 'node:fs';
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { loadConfig, logger } from '../config.js';
 import { runIndicatorDeriver } from '../agents/indicator-deriver.js';
 import type { IndicatorDeriverInput } from '../types.js';
 
-const filePath = process.argv[2];
+// Parse args: [filePath] [--ollama <model>] [--url <ollama-url>]
+const args = process.argv.slice(2);
+let filePath: string | undefined;
+let ollamaModel: string | undefined;
+let ollamaUrl: string | undefined;
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--ollama' && args[i + 1]) { ollamaModel = args[++i]; }
+  else if (args[i] === '--url' && args[i + 1]) { ollamaUrl = args[++i]; }
+  else if (!args[i].startsWith('--')) { filePath = args[i]; }
+}
+
 if (!filePath) {
-  console.error('Usage: npm run indicator-diag -- <path-to-listing.txt>');
+  console.error('Usage: npm run indicator-diag -- <path-to-listing.txt> [--ollama <model>] [--url <ollama-url>]');
+  console.error('  Default (no --ollama): uses Anthropic claude-sonnet');
+  console.error('  Example: npm run indicator-diag -- sr20.txt --ollama qwen2.5:7b');
   process.exit(1);
 }
 
@@ -53,12 +67,21 @@ console.log(`  Attributes    : ${Object.keys(rawAttributes).filter(k => k !== 'd
 console.log('');
 
 const config = loadConfig();
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const model_id = config.agent.matcher_model;
 
-logger.info({ model: model_id }, 'Running indicator deriver...');
+// Build client — Ollama (OpenAI-compat) or Anthropic
+const useOllama = !!ollamaModel;
+const baseURL = ollamaUrl ?? config.ollama?.url ?? 'http://localhost:11434';
+const client = useOllama
+  ? new OpenAI({ baseURL: `${baseURL}/v1`, apiKey: 'ollama' })
+  : new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const model_id = ollamaModel ?? config.agent.matcher_model;
 
-const result = await runIndicatorDeriver(input, anthropic, model_id);
+console.log(`--- Backend: ${useOllama ? `Ollama  (${baseURL})` : 'Anthropic'} ---`);
+console.log(`--- Model  : ${model_id} ---\n`);
+
+logger.info({ model: model_id, backend: useOllama ? 'ollama' : 'anthropic' }, 'Running indicator deriver...');
+
+const result = await runIndicatorDeriver(input, client, model_id);
 
 if (result.error) {
   console.error(`\n❌ Deriver failed: ${result.error}`);

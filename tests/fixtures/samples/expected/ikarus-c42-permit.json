@@ -1,0 +1,21 @@
+{
+  "_fixture": "ikarus-c42-permit.txt",
+  "_notes": "Ikarus C42 microlight, LAA permit, MGL EFIS, VFR only, tied-down, full ownership",
+  "required": {
+    "ifr_approval": "VFR Only",
+    "airworthiness_basis": "Permit to Fly",
+    "registration_country": "United Kingdom",
+    "ownership_structure": "Full Ownership",
+    "redundancy_level": "Low"
+  },
+  "flexible": {
+    "aircraft_type_category": ["Single Piston", null],
+    "avionics_type": ["Hybrid", "Glass Cockpit", "Steam Gauges"],
+    "autopilot_capability": ["None", null],
+    "ifr_capability_level": ["Basic", null],
+    "engine_state": ["Green", "Amber"],
+    "condition_band": ["Green", "Amber"],
+    "hangar_situation": ["Tie-down", null]
+  },
+  "non_null": []
+}

@@ -1,11 +1,11 @@
 /**
  * T011 — TDD tests for src/agents/indicator-deriver.ts
- * Write BEFORE implementing the agent — confirm these fail first.
+ * Three-call architecture: listing facts | avionics list | avionics classification
  */
 import { describe, it, expect, vi } from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
 import { runIndicatorDeriver } from '../../src/agents/indicator-deriver.js';
-import type { IndicatorDeriverInput, StructuredIndicators } from '../../src/types.js';
+import type { IndicatorDeriverInput } from '../../src/types.js';
 
 const LISTING_ID = 'test-listing-001';
 
@@ -18,42 +18,45 @@ const BASE_INPUT: IndicatorDeriverInput = {
   registration: 'G-ABCD',
 };
 
-const VALID_INDICATORS: StructuredIndicators = {
-  avionics_type:          { value: 'Glass Cockpit', confidence: 'High' },
-  autopilot_capability:   { value: 'Modern Integrated', confidence: 'High' },
-  ifr_approval:           { value: 'IFR Approved', confidence: 'High' },
-  ifr_capability_level:   { value: 'Advanced', confidence: 'High' },
-  engine_state:           { value: 'Green', confidence: 'High' },
-  smoh_hours:             { value: 450, confidence: 'High' },
-  condition_band:         { value: 'Green', confidence: 'High' },
-  airworthiness_basis:    { value: 'CAA EASA', confidence: 'High' },
-  aircraft_type_category: { value: 'Single-Engine Piston', confidence: 'High' },
-  passenger_capacity:     { value: 4, band: '3–4 seats', confidence: 'High' },
-  typical_range:          { value: 700, band: 'Green', confidence: 'High' },
-  typical_cruise_speed:   { value: 122, band: 'Amber', confidence: 'High' },
-  typical_fuel_burn:      { value: 8, band: 'Green', confidence: 'High' },
-  maintenance_cost_band:  { value: 'Green', confidence: 'Medium' },
-  fuel_cost_band:         { value: 'Green', confidence: 'High' },
-  maintenance_program:    { value: null, confidence: 'Low' },
-  registration_country:   { value: 'United Kingdom', confidence: 'High' },
-  ownership_structure:    { value: 'Full Ownership', confidence: 'High' },
-  hangar_situation:       { value: 'Hangared', confidence: 'High' },
-  redundancy_level:       { value: 'Low', confidence: 'High' },
-};
+// Canonical mock responses for the three LLM calls
+const FACTS_RESPONSE = JSON.stringify({
+  engine_state: 'Green',
+  smoh_hours: 450,
+  condition_band: 'Green',
+  airworthiness_basis: 'Type Certificated',
+  ownership_structure: 'Full Ownership',
+  hangar_situation: 'Hangared',
+  maintenance_program: null,
+});
 
-function makeAnthropicMock(responseText: string): Anthropic {
-  return {
-    messages: {
-      create: vi.fn().mockResolvedValue({
-        content: [{ type: 'text', text: responseText }],
-      }),
-    },
-  } as unknown as Anthropic;
+const AVIONICS_LIST_RESPONSE = JSON.stringify([
+  'Garmin G1000 PFD',
+  'Garmin G1000 MFD',
+  'GFC700 autopilot',
+]);
+
+const AVIONICS_CLASS_RESPONSE = JSON.stringify({
+  avionics_type:         { value: 'Glass Cockpit',      confidence: 'High' },
+  autopilot_capability:  { value: 'Modern Integrated',  confidence: 'High' },
+  ifr_avionics_equipped: { value: 'Equipped',           confidence: 'High' },
+  ifr_capability_level:  { value: 'Advanced',           confidence: 'High' },
+});
+
+/** Create a mock Anthropic client that returns each response in sequence. */
+function makeAnthropicMock(...responses: string[]): Anthropic {
+  const mock = vi.fn();
+  for (const response of responses) {
+    mock.mockResolvedValueOnce({ content: [{ type: 'text', text: response }] });
+  }
+  // Fallback for any extra calls
+  mock.mockResolvedValue({ content: [{ type: 'text', text: '{}' }] });
+  return { messages: { create: mock } } as unknown as Anthropic;
 }
 
 describe('indicator-deriver agent', () => {
-  it('returns error result (not throw) when LLM returns invalid JSON', async () => {
-    const anthropic = makeAnthropicMock('this is not json at all');
+  it('returns error result (not throw) when LLM throws', async () => {
+    const mock = vi.fn().mockRejectedValue(new Error('API error'));
+    const anthropic = { messages: { create: mock } } as unknown as Anthropic;
     const result = await runIndicatorDeriver(BASE_INPUT, anthropic, 'test-model');
     expect(result.listingId).toBe(LISTING_ID);
     expect(result.error).toBeTruthy();
@@ -62,88 +65,88 @@ describe('indicator-deriver agent', () => {
 
   it('normalises null confidence to "Low"', async () => {
     const withNullConf = JSON.stringify({ avionics_type: { value: 'Glass Cockpit', confidence: null } });
-    const result = await runIndicatorDeriver(BASE_INPUT, makeAnthropicMock(withNullConf), 'test-model');
+    const result = await runIndicatorDeriver(
+      BASE_INPUT,
+      makeAnthropicMock('{}', AVIONICS_LIST_RESPONSE, withNullConf),
+      'test-model',
+    );
     expect(result.error).toBeUndefined();
     expect(result.indicators!.avionics_type.confidence).toBe('Low');
   });
 
   it('normalises numeric confidence values (e.g. 0.9 → "High")', async () => {
     const withNumericConf = JSON.stringify({
-      avionics_type: { value: 'Glass Cockpit', confidence: 0.9 },
+      avionics_type:         { value: 'Glass Cockpit', confidence: 0.9 },
+      autopilot_capability:  { value: null,            confidence: 0.6 },
+      ifr_avionics_equipped: { value: 'Equipped',      confidence: 0.3 },
+      ifr_capability_level:  { value: null,            confidence: null },
     });
-    const anthropic = makeAnthropicMock(withNumericConf);
-    const result = await runIndicatorDeriver(BASE_INPUT, anthropic, 'test-model');
+    const result = await runIndicatorDeriver(
+      BASE_INPUT,
+      makeAnthropicMock('{}', AVIONICS_LIST_RESPONSE, withNumericConf),
+      'test-model',
+    );
     expect(result.error).toBeUndefined();
     expect(result.indicators!.avionics_type.confidence).toBe('High');
-    // boundary: 0.6 → Medium, 0.3 → Low
-    const withMid = JSON.stringify({ avionics_type: { value: null, confidence: 0.6 } });
-    const r2 = await runIndicatorDeriver(BASE_INPUT, makeAnthropicMock(withMid), 'test-model');
-    expect(r2.indicators!.avionics_type.confidence).toBe('Medium');
-    const withLow = JSON.stringify({ avionics_type: { value: null, confidence: 0.3 } });
-    const r3 = await runIndicatorDeriver(BASE_INPUT, makeAnthropicMock(withLow), 'test-model');
-    expect(r3.indicators!.avionics_type.confidence).toBe('Low');
+    expect(result.indicators!.autopilot_capability.confidence).toBe('Medium');
+    expect(result.indicators!.ifr_capability_level.confidence).toBe('Low');
   });
 
   it('fills missing fields with null/Low placeholders when LLM omits them', async () => {
-    // Only avionics_type present — the other 19 fields should be backfilled by normalisation
-    const partial = JSON.stringify({ avionics_type: { value: 'Glass Cockpit', confidence: 'High' } });
-    const anthropic = makeAnthropicMock(partial);
-    const result = await runIndicatorDeriver(BASE_INPUT, anthropic, 'test-model');
-    expect(result.listingId).toBe(LISTING_ID);
+    const partialClass = JSON.stringify({ avionics_type: { value: 'Glass Cockpit', confidence: 'High' } });
+    const result = await runIndicatorDeriver(
+      BASE_INPUT,
+      makeAnthropicMock('{}', AVIONICS_LIST_RESPONSE, partialClass),
+      'test-model',
+    );
     expect(result.error).toBeUndefined();
     expect(result.indicators).toBeDefined();
-    // The provided field is preserved
+    // Provided field is preserved
     expect(result.indicators!.avionics_type.value).toBe('Glass Cockpit');
-    // A missing field is backfilled with null and Low confidence
+    // Missing listing-facts field is null/Low
     expect(result.indicators!.engine_state.value).toBeNull();
     expect(result.indicators!.engine_state.confidence).toBe('Low');
   });
 
   it('returns all-null indicators (not error) for empty rawAttributes', async () => {
-    const allNull: StructuredIndicators = Object.fromEntries(
-      Object.keys(VALID_INDICATORS).map((k) => {
-        const field = VALID_INDICATORS[k as keyof StructuredIndicators];
-        if ('band' in field) return [k, { value: null, band: null, confidence: 'Low' }];
-        return [k, { value: null, confidence: 'Low' }];
-      })
-    ) as unknown as StructuredIndicators;
-    const anthropic = makeAnthropicMock(JSON.stringify(allNull));
     const result = await runIndicatorDeriver(
       { ...BASE_INPUT, rawAttributes: {} },
-      anthropic,
-      'test-model'
+      makeAnthropicMock('{}', '[]'),
+      'test-model',
     );
     expect(result.error).toBeUndefined();
     expect(result.indicators).toBeDefined();
   });
 
   it('G- registration prefix → registration_country.value = "United Kingdom"', async () => {
-    // LLM returns registration_country = null; agent should derive from prefix G-
-    const withNullCountry: StructuredIndicators = {
-      ...VALID_INDICATORS,
-      registration_country: { value: null, confidence: 'Low' },
-    };
-    const anthropic = makeAnthropicMock(JSON.stringify(withNullCountry));
     const result = await runIndicatorDeriver(
       { ...BASE_INPUT, registration: 'G-ABCD' },
-      anthropic,
-      'test-model'
+      makeAnthropicMock('{}', '[]'),
+      'test-model',
     );
     expect(result.error).toBeUndefined();
     expect(result.indicators?.registration_country.value).toBe('United Kingdom');
   });
 
   it('output listingId matches input listingId', async () => {
-    const anthropic = makeAnthropicMock(JSON.stringify(VALID_INDICATORS));
-    const result = await runIndicatorDeriver(BASE_INPUT, anthropic, 'test-model');
+    const result = await runIndicatorDeriver(
+      BASE_INPUT,
+      makeAnthropicMock(FACTS_RESPONSE, AVIONICS_LIST_RESPONSE, AVIONICS_CLASS_RESPONSE),
+      'test-model',
+    );
     expect(result.listingId).toBe(LISTING_ID);
   });
 
   it('returns valid indicators for well-formed LLM response', async () => {
-    const anthropic = makeAnthropicMock(JSON.stringify(VALID_INDICATORS));
-    const result = await runIndicatorDeriver(BASE_INPUT, anthropic, 'test-model');
+    const result = await runIndicatorDeriver(
+      BASE_INPUT,
+      makeAnthropicMock(FACTS_RESPONSE, AVIONICS_LIST_RESPONSE, AVIONICS_CLASS_RESPONSE),
+      'test-model',
+    );
     expect(result.error).toBeUndefined();
     expect(result.indicators).toBeDefined();
     expect(result.indicators!.engine_state.value).toBe('Green');
+    expect(result.indicators!.avionics_type.value).toBe('Glass Cockpit');
+    expect(result.indicators!.registration_country.value).toBe('United Kingdom');
   });
 });

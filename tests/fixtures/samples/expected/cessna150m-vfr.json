@@ -1,0 +1,20 @@
+{
+  "_fixture": "cessna150m-vfr.txt",
+  "_notes": "Cessna 150M, VFR only, steam gauges, zero-time engine, full ownership, tied-down",
+  "required": {
+    "aircraft_type_category": "Single Piston",
+    "avionics_type": "Steam Gauges",
+    "airworthiness_basis": "Type Certificated",
+    "registration_country": "United Kingdom",
+    "ownership_structure": "Full Ownership",
+    "redundancy_level": "Low"
+  },
+  "flexible": {
+    "ifr_approval": ["VFR Only", "IFR Approved", "IFR Equipped (Not Approved)"],
+    "autopilot_capability": ["None"],
+    "engine_state": ["Green", "Amber"],
+    "condition_band": ["Green", "Amber"],
+    "ifr_capability_level": ["Basic", null]
+  },
+  "non_null": ["passenger_capacity", "typical_range", "typical_cruise_speed", "typical_fuel_burn"]
+}

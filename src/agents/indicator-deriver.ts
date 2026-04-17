@@ -1,14 +1,29 @@
 /**
  * Indicator Deriver Agent
  *
- * Single LLM call per listing — derives all 20 structured indicators from raw_attributes.
- * Never throws; returns { listingId, error } on any failure.
+ * Uses three small focused LLM calls instead of one large one:
+ *   1. Listing facts  — engine state, condition, ownership, hangar, maintenance program
+ *   2. Avionics list  — extract equipment as a JSON array
+ *   3. Avionics class — classify the list (type, autopilot, IFR equipped, IFR level)
+ *
+ * Performance/profile fields (seats, range, speed, fuel burn) are looked up
+ * deterministically from aircraft-specs.ts. Never throws; returns { listingId, error }
+ * on any failure.
  */
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import type { IndicatorDeriverInput, IndicatorDeriverOutput, StructuredIndicators, Confidence } from '../types.js';
 import { logger } from '../config.js';
+import { isCertifiedType } from '../data/certified-types.js';
+import {
+  lookupAircraftSpecs,
+  rangeBand, cruiseBand, fuelBand, seatBand, maintenanceBand, redundancyFromType,
+} from '../data/aircraft-specs.js';
 
-// Registration prefix → country name mapping (deterministic; AI only for ambiguous/absent)
+// ---------------------------------------------------------------------------
+// Registration → country (deterministic)
+// ---------------------------------------------------------------------------
+
 const REGISTRATION_COUNTRY: Record<string, string> = {
   'G-': 'United Kingdom',
   'N':  'United States',
@@ -47,254 +62,401 @@ function deriveCountryFromRegistration(registration: string | null | undefined):
   return null;
 }
 
-const BANDED_FIELDS = new Set(['typical_range', 'typical_cruise_speed', 'typical_fuel_burn', 'passenger_capacity']);
+// ---------------------------------------------------------------------------
+// Confidence helpers
+// ---------------------------------------------------------------------------
 
-const ALL_FIELDS: Array<keyof StructuredIndicators> = [
-  'avionics_type', 'autopilot_capability', 'ifr_approval', 'ifr_capability_level',
-  'engine_state', 'smoh_hours', 'condition_band', 'airworthiness_basis',
-  'aircraft_type_category', 'passenger_capacity', 'typical_range', 'typical_cruise_speed',
-  'typical_fuel_burn', 'maintenance_cost_band', 'fuel_cost_band', 'maintenance_program',
-  'registration_country', 'ownership_structure', 'hangar_situation', 'redundancy_level',
-];
-
-function isValidConfidence(v: unknown): v is Confidence {
-  return v === 'High' || v === 'Medium' || v === 'Low';
-}
-
-// Normalise confidence: accept any capitalisation ("high" → "High"), numeric 0–1 (0.8 → "High"),
-// or null/missing (→ "Low" as a safe default)
-function normaliseConfidence(v: unknown): Confidence | unknown {
+function normaliseConfidence(v: unknown): Confidence {
   if (v === null || v === undefined) return 'Low';
   if (typeof v === 'number') {
     if (v >= 0.8) return 'High';
     if (v >= 0.5) return 'Medium';
     return 'Low';
   }
-  if (typeof v !== 'string') return v;
-  const cap = v.charAt(0).toUpperCase() + v.slice(1).toLowerCase();
-  if (cap === 'High' || cap === 'Medium' || cap === 'Low') return cap as Confidence;
-  return v;
-}
-
-// Normalise a value field: treat the string "Unknown" (any case) as null
-function normaliseValue(v: unknown): unknown {
-  if (typeof v === 'string' && v.toLowerCase() === 'unknown') return null;
-  return v;
-}
-
-// Mutates parsed LLM output in-place to fix common model quirks before strict validation
-function normaliseLlmResponse(raw: unknown): unknown {
-  if (typeof raw !== 'object' || raw === null) return raw;
-  const obj = raw as Record<string, unknown>;
-  for (const field of ALL_FIELDS) {
-    const ind = obj[field];
-    if (typeof ind !== 'object' || ind === null) {
-      // Field entirely absent (or scalar) — insert a null placeholder with Low confidence
-      obj[field] = BANDED_FIELDS.has(field)
-        ? { value: null, band: null, confidence: 'Low' }
-        : { value: null, confidence: 'Low' };
-      continue;
-    }
-    const indObj = ind as Record<string, unknown>;
-    indObj.confidence = normaliseConfidence(indObj.confidence);
-    indObj.value = normaliseValue(indObj.value);
-    if (BANDED_FIELDS.has(field) && !('band' in indObj)) {
-      indObj.band = null;
-    }
+  if (typeof v === 'string') {
+    const cap = v.charAt(0).toUpperCase() + v.slice(1).toLowerCase();
+    if (cap === 'High' || cap === 'Medium' || cap === 'Low') return cap as Confidence;
   }
-  return raw;
+  return 'Low';
 }
 
-function validateIndicators(raw: unknown, listingId: string): StructuredIndicators | null {
-  if (typeof raw !== 'object' || raw === null) {
-    logger.warn({ listingId, rawType: typeof raw }, 'Indicator deriver: response is not an object');
-    return null;
+function normaliseStringValue(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'string') {
+    if (v.toLowerCase() === 'unknown' || v.toLowerCase() === 'null' || v === '') return null;
+    return v;
   }
-  const obj = raw as Record<string, unknown>;
+  return null;
+}
 
-  for (const field of ALL_FIELDS) {
-    const ind = obj[field];
-    if (typeof ind !== 'object' || ind === null) {
-      logger.warn({ listingId, field, ind }, 'Indicator deriver: field missing or non-object');
-      return null;
-    }
-    const indObj = ind as Record<string, unknown>;
-    if (!isValidConfidence(indObj.confidence)) {
-      logger.warn({ listingId, field, confidence: indObj.confidence }, 'Indicator deriver: invalid confidence value');
-      return null;
-    }
-    if (indObj.value !== null && typeof indObj.value !== 'string' && typeof indObj.value !== 'number') {
-      logger.warn({ listingId, field, valueType: typeof indObj.value, value: indObj.value }, 'Indicator deriver: invalid value type');
-      return null;
-    }
-    if (BANDED_FIELDS.has(field)) {
-      if (indObj.band !== null && typeof indObj.band !== 'string') {
-        logger.warn({ listingId, field, band: indObj.band }, 'Indicator deriver: invalid band value');
-        return null;
+function normaliseNumberValue(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const n = parseFloat(v);
+    return isNaN(n) ? null : n;
+  }
+  return null;
+}
+
+function ind(value: string | null, confidence: Confidence = 'High'): { value: string | null; confidence: Confidence } {
+  return { value, confidence };
+}
+
+function nind(value: number | null, confidence: Confidence = 'High'): { value: number | null; confidence: Confidence } {
+  return { value, confidence };
+}
+
+function banded(value: number | null, band: string | null, confidence: Confidence = 'High'): { value: number | null; band: string | null; confidence: Confidence } {
+  return { value, band, confidence };
+}
+
+// ---------------------------------------------------------------------------
+// Generic LLM call (Anthropic or Ollama)
+// ---------------------------------------------------------------------------
+
+async function callLlm(
+  client: Anthropic | OpenAI,
+  model: string,
+  systemPrompt: string,
+  userMessage: string,
+  listingId: string,
+): Promise<string> {
+  if (client instanceof OpenAI) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const response = await (client.chat.completions.create as any)({
+      model,
+      max_tokens: 800,
+      think: false,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user',   content: `${userMessage}\n\n/no_think` },
+      ],
+    }) as OpenAI.Chat.ChatCompletion;
+    return response.choices[0]?.message?.content ?? '';
+  }
+
+  // Anthropic — retry on 429
+  let attempt = 0;
+  while (true) {
+    try {
+      const response = await client.messages.create({
+        model,
+        max_tokens: 800,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+      });
+      return response.content
+        .filter(b => b.type === 'text')
+        .map(b => (b as { type: 'text'; text: string }).text)
+        .join('');
+    } catch (apiErr) {
+      const status  = (apiErr as { status?: number }).status;
+      const headers = (apiErr as { headers?: Record<string, string> }).headers;
+      if (status === 429 && attempt < 4) {
+        attempt++;
+        const waitMs = Math.max((Number(headers?.['retry-after'] ?? 60)) * 1000, 1000);
+        logger.warn({ listingId, attempt, waitMs }, 'Indicator deriver: rate limited, retrying');
+        await new Promise(r => setTimeout(r, waitMs));
+      } else {
+        throw apiErr;
       }
     }
   }
-  return raw as StructuredIndicators;
 }
 
-const SYSTEM_PROMPT = `You are an aviation expert who classifies aircraft listings into structured indicators.
-Given an aircraft listing's details and raw attributes, return a single JSON object with exactly 20 fields.
-Each field is an indicator value object. Unknown values use null (not the string "Unknown").
+function extractJson(text: string): unknown | null {
+  // Strip qwen3-style thinking blocks and markdown code fences
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  cleaned = cleaned.replace(/```(?:json)?\s*([\s\S]*?)```/g, '$1').trim();
+  // Find the outermost JSON array or object
+  const match = cleaned.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+}
 
-=== INDICATOR DEFINITIONS ===
+// ---------------------------------------------------------------------------
+// Call 1 — Listing facts
+// ---------------------------------------------------------------------------
 
-aircraft_type_category: { value: "Single Piston"|"Twin Piston"|"Turboprop"|"Jet"|null, confidence }
-avionics_type: { value: "Glass Cockpit"|"Hybrid"|"Steam Gauges"|null, confidence }
-autopilot_capability: { value: "Modern Integrated"|"Basic"|"None"|null, confidence }
-ifr_approval: { value: "VFR Only"|"IFR Equipped (Not Approved)"|"IFR Approved"|null, confidence }
-  - IFR Approved: Standard type-cert aircraft WITH minimum IFR instruments (AI/AHRS + DG/HSI + altimeter + turn coordinator + IFR nav source)
-  - IFR Equipped (Not Approved): Permit/Experimental aircraft with IFR instruments; OR standard-cat aircraft falling short of minimum IFR set
-  - VFR Only: VFR-only equipment; microlight/ultralight; or explicitly stated VFR only
-  - null: Equipment too sparse to determine
+const LISTING_FACTS_SYSTEM = `You are an aviation listing parser. Extract structured facts from the listing.
+Return ONLY a JSON object with these fields (unknown = null):
 
-ifr_capability_level: { value: "Basic"|"Enhanced"|"Advanced"|"High-End"|null, confidence }
-  - Basic: Steam gauges, single analogue VOR/ILS, no GPS or VFR-only GPS, no autopilot or wing-leveller
-  - Enhanced: WAAS GPS (GNS 430W/530W, GTN 650/750, Avidyne IFD), moving map, 2-axis autopilot (KAP-140, S-TEC, GFC 500)
-  - Advanced: Full glass (G1000, G3X Touch, Avidyne Entegra, Dynon SkyView certified), integrated autopilot with approach coupling (GFC 700, Avidyne DFC90), TAWS, ADS-B
-  - High-End: Low workload design, VNAV, autothrottle, ESP, yaw damper (Garmin Perspective/G3000/G5000, Cirrus SR series with Perspective+)
+engine_state: "Green"|"Amber"|"Red"|null
+  Green=recently overhauled/plenty of life; Amber=mid-life; Red=at/beyond TBO or known issues
+smoh_hours: <number>|null  -- hours since last major overhaul (numeric only)
+condition_band: "Green"|"Amber"|"Red"|null
+  Green=excellent/recently refurbished; Amber=good/showing age; Red=poor/needs work
+airworthiness_basis: "Type Certificated"|"Permit to Fly"|"Experimental"|null
+  Type Certificated=standard CofA aircraft; Permit to Fly=LAA/BMAA/microlight permit; Experimental=amateur-built
+ownership_structure: "Full Ownership"|"Partnership"|"Flying Club Share"|null
+  Full=sole owner; Partnership=2–4 person syndicate/share; Flying Club Share=group/club with 5+ members or structured club
+hangar_situation: "Hangared"|"T-Hangar"|"Tie-down"|null
+  Hangared=enclosed hangar; T-Hangar=individual T-shaped hangar bay; Tie-down=outside/apron
+maintenance_program: <named program>|"None"|null
+  Named manufacturer programme only (e.g. "Cessna Care", "Cirrus SMP"); generic "well maintained" = null`;
 
-engine_state: { value: "Green"|"Amber"|"Red"|null, confidence }
-  - Green: Recently overhauled, plenty of life remaining (e.g. <200 hours since overhaul, or fresh engine)
-  - Amber: Serviceable but overhaul due within a few years (e.g. mid-life, approaching TBO)
-  - Red: Urgently needs overhaul (e.g. at or beyond TBO, known issues)
+interface ListingFacts {
+  engine_state: string | null;
+  smoh_hours: number | null;
+  condition_band: string | null;
+  airworthiness_basis: string | null;
+  ownership_structure: string | null;
+  hangar_situation: string | null;
+  maintenance_program: string | null;
+}
 
-smoh_hours: { value: <number>|null, confidence }  -- numeric hours since major overhaul; display only, not scored
+function parseListingFacts(raw: unknown): ListingFacts {
+  const def: ListingFacts = {
+    engine_state: null, smoh_hours: null, condition_band: null,
+    airworthiness_basis: null, ownership_structure: null,
+    hangar_situation: null, maintenance_program: null,
+  };
+  if (typeof raw !== 'object' || raw === null) return def;
+  const obj = raw as Record<string, unknown>;
+  return {
+    engine_state:       normaliseStringValue(obj['engine_state']),
+    smoh_hours:         normaliseNumberValue(obj['smoh_hours']),
+    condition_band:     normaliseStringValue(obj['condition_band']),
+    airworthiness_basis: normaliseStringValue(obj['airworthiness_basis']),
+    ownership_structure: normaliseStringValue(obj['ownership_structure']),
+    hangar_situation:   normaliseStringValue(obj['hangar_situation']),
+    maintenance_program: normaliseStringValue(obj['maintenance_program']),
+  };
+}
 
-condition_band: { value: "Green"|"Amber"|"Red"|null, confidence }
-  - Green: Excellent condition, recently refurbished
-  - Amber: Good/acceptable condition, showing age
-  - Red: Poor condition, requires significant work
+// ---------------------------------------------------------------------------
+// Call 2 — Avionics list extraction
+// ---------------------------------------------------------------------------
 
-airworthiness_basis: { value: "Type Certificated"|"Permit to Fly"|"Experimental"|null, confidence }
+const AVIONICS_LIST_SYSTEM = `Extract all avionics and instrument equipment from the aircraft listing.
+Return ONLY a JSON array of strings, one item per piece of equipment.
+Include: GPS/nav units, autopilot, EFIS/glass panel displays, transponder, ADS-B, comm radios, flight instruments (AI, HSI, etc.), weather, TAWS.
+Exclude: physical airframe items, engine parts, seats, paint.
+If nothing is mentioned, return an empty array [].
+Example: ["Garmin GNS 430W", "KAP 140 autopilot", "Garmin GTX 345 ADS-B", "Avidyne MFD"]`;
 
-passenger_capacity: { value: <number>|null, band: "2 seats"|"3–4 seats"|"5–6 seats"|"7+ seats"|null, confidence }
-  -- value: approximate seat count; band: derived category
-  -- 2→"2 seats", 3-4→"3–4 seats", 5-6→"5–6 seats", 7+→"7+ seats"
+function parseAvionicsList(raw: unknown): string[] {
+  // Handle wrapped object: {"avionics": [...]} or {"equipment": [...]}
+  if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    const arr = obj['avionics'] ?? obj['equipment'] ?? obj['items'] ?? Object.values(obj)[0];
+    if (Array.isArray(arr)) return parseAvionicsList(arr);
+    return [];
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(x => typeof x === 'string' && x.trim().length > 0);
+}
 
-typical_range: { value: <nm>|null, band: "Green"|"Amber"|"Red"|null, confidence }
-  -- Infer from aircraft type knowledge. Green≥600nm, Amber 300-599nm, Red<300nm
+// ---------------------------------------------------------------------------
+// Call 3 — Avionics classification
+// ---------------------------------------------------------------------------
 
-typical_cruise_speed: { value: <kts>|null, band: "Green"|"Amber"|"Red"|null, confidence }
-  -- Infer from aircraft type. Green≥140kts, Amber 90-139kts, Red<90kts
+const AVIONICS_CLASS_SYSTEM = `You are an avionics expert. Classify this equipment list.
+Return ONLY a JSON object with exactly these fields:
 
-typical_fuel_burn: { value: <GPH>|null, band: "Green"|"Amber"|"Red"|null, confidence }
-  -- Infer from aircraft type. Green≤10GPH, Amber 11-20GPH, Red>20GPH
+avionics_type: "Glass Cockpit"|"Hybrid"|"Steam Gauges"|null
+  Glass Cockpit: fully integrated PFD+MFD replacing ALL primary instruments (G1000, Avidyne Entegra, Dynon SkyView HDX, Cirrus Perspective, G3X Touch).
+  Hybrid: steam/analog primary instruments PLUS one or more digital nav/GPS boxes (GNS 430/530, GTN 650/750, IFD440). The AI and altimeter are still analog.
+  Steam Gauges: all-analog instruments. VOR/ILS, ADF, transponder, or comms do NOT change this classification.
 
-maintenance_cost_band: { value: "Green"|"Amber"|"Red"|null, confidence }
-  -- Overall maintenance cost estimate (Green=low, Red=high)
+autopilot_capability: "Modern Integrated"|"Basic"|"None"|null
+  Modern Integrated: full-featured with approach coupling (GFC 700, GFC 500, Avidyne DFC90, S-TEC 55X, KFC 150/225).
+  Basic: simple wing-leveller or altitude hold only (S-Tec Thirty, KAP 100, Brittain).
+  None: no autopilot.
 
-fuel_cost_band: { value: "Green"|"Amber"|"Red"|null, confidence }
-  -- Running fuel cost (same banding as typical_fuel_burn)
+ifr_avionics_equipped: "Equipped"|"Not Equipped"|null
+  Equipped: full IFR panel (AI/AHRS + DI/HSI + altimeter + turn coordinator) AND at least one fixed nav source (VOR/ILS receiver or fixed GPS — not a handheld/portable).
+  Not Equipped: missing required instruments OR nav source is portable only.
 
-maintenance_program: { value: <program name>|"None"|null, confidence }
-  -- Named manufacturer programme only (e.g. "Cessna Care", "Cirrus SMP", "Diamond Care"); generic "maintained" = null
+ifr_capability_level: "Basic"|"Enhanced"|"Advanced"|"High-End"|null
+  Basic: steam gauges, analogue VOR/ILS, no WAAS GPS, no autopilot or wing-leveller only.
+  Enhanced: WAAS GPS (GNS 430W/530W, GTN 650/750, IFD440/540) + moving map + 2-axis autopilot.
+  Advanced: full glass cockpit + approach-coupled autopilot + ADS-B + TAWS (G1000/GFC700, Entegra/DFC90, SkyView).
+  High-End: VNAV, ESP, yaw damper, autothrottle, low-workload design (Perspective+, G3000, G5000).
 
-registration_country: { value: <country name>|null, confidence }
-  -- Derive from registration prefix if present; otherwise infer from listing text
+Confidence should reflect how clearly the equipment list supports the classification.`;
 
-ownership_structure: { value: "Full Ownership"|"Partnership"|"Flying Club Share"|null, confidence }
+interface AvionicsClass {
+  avionics_type: string | null;
+  autopilot_capability: string | null;
+  ifr_avionics_equipped: string | null;
+  ifr_capability_level: string | null;
+  confidence: Record<string, Confidence>;
+}
 
-hangar_situation: { value: "Hangared"|"T-Hangar"|"Tie-down"|null, confidence }
+function parseAvionicsClass(raw: unknown): AvionicsClass {
+  const def: AvionicsClass = {
+    avionics_type: null, autopilot_capability: null,
+    ifr_avionics_equipped: null, ifr_capability_level: null,
+    confidence: {},
+  };
+  if (typeof raw !== 'object' || raw === null) return def;
+  const obj = raw as Record<string, unknown>;
 
-redundancy_level: { value: "High"|"Medium"|"Low"|null, confidence }
-  -- High: twin-engine or extensive backup systems; Low: basic VFR single; Medium: otherwise
+  const fields = ['avionics_type', 'autopilot_capability', 'ifr_avionics_equipped', 'ifr_capability_level'] as const;
+  const result: AvionicsClass = { ...def };
+  for (const f of fields) {
+    const entry = obj[f];
+    if (typeof entry === 'object' && entry !== null) {
+      const e = entry as Record<string, unknown>;
+      result[f] = normaliseStringValue(e['value']);
+      result.confidence[f] = normaliseConfidence(e['confidence']);
+    } else {
+      // Model returned raw string value directly
+      result[f] = normaliseStringValue(entry);
+      result.confidence[f] = 'Medium';
+    }
+  }
+  return result;
+}
 
-=== OUTPUT FORMAT ===
-Return ONLY a valid JSON object with all 20 fields. No markdown, no explanation.
-Unknown = null (not the string "Unknown").
-`;
+// ---------------------------------------------------------------------------
+// IFR approval post-processing
+// ---------------------------------------------------------------------------
+
+function computeIfrApproval(
+  ifrEquipped: string | null,
+  ifrEquippedConf: Confidence,
+  certified: boolean,
+  vfrOnly: boolean,
+): { value: string | null; confidence: Confidence } {
+  if (vfrOnly) return ind('VFR Only', 'High');
+  if (ifrEquipped === 'Equipped') {
+    return ind(certified ? 'IFR Approved' : 'IFR Equipped (Not Approved)', ifrEquippedConf);
+  }
+  if (ifrEquipped === 'Not Equipped') return ind('VFR Only', ifrEquippedConf);
+  return ind(null, 'Low');
+}
+
+// ---------------------------------------------------------------------------
+// Main export
+// ---------------------------------------------------------------------------
 
 export async function runIndicatorDeriver(
   input: IndicatorDeriverInput,
-  anthropic: Anthropic,
-  model: string
+  client: Anthropic | OpenAI,
+  model: string,
 ): Promise<IndicatorDeriverOutput> {
   const { listingId } = input;
 
   try {
-    // Deterministic country derivation from registration prefix
+    // --- Deterministic phase ---
     const derivedCountry = deriveCountryFromRegistration(input.registration);
+    const { certified, vfrOnly } = isCertifiedType(input.make, input.model);
+    const specs = lookupAircraftSpecs(input.make, input.model);
 
-    const userMessage = [
+    const listingContext = [
       `Aircraft: ${input.aircraftType ?? 'Unknown'} | Make: ${input.make ?? 'Unknown'} | Model: ${input.model ?? 'Unknown'}`,
       input.registration ? `Registration: ${input.registration}` : '',
-      derivedCountry ? `(Registration country derived: ${derivedCountry})` : '',
+      derivedCountry ? `(Country derived from registration: ${derivedCountry})` : '',
       '',
       'Raw attributes:',
       JSON.stringify(input.rawAttributes, null, 2),
     ].filter(Boolean).join('\n');
 
-    // Retry on 429 rate-limit errors using the retry-after header
-    let response: Awaited<ReturnType<typeof anthropic.messages.create>>;
-    {
-      let attempt = 0;
-      const maxRetries = 4;
-      while (true) {
-        try {
-          response = await anthropic.messages.create({
-            model,
-            max_tokens: 3000,
-            system: SYSTEM_PROMPT,
-            messages: [{ role: 'user', content: userMessage }],
-          });
-          break;
-        } catch (apiErr) {
-          const status = (apiErr as { status?: number }).status;
-          const headers = (apiErr as { headers?: Record<string, string> }).headers;
-          if (status === 429 && attempt < maxRetries) {
-            attempt++;
-            const waitMs = Math.max((Number(headers?.['retry-after'] ?? 60)) * 1000, 1000);
-            logger.warn({ listingId, attempt, waitMs }, 'Indicator deriver: rate limited, retrying');
-            await new Promise((resolve) => setTimeout(resolve, waitMs));
-          } else {
-            throw apiErr;
-          }
-        }
-      }
+    // --- LLM Call 1: listing facts ---
+    const factsText = await callLlm(client, model, LISTING_FACTS_SYSTEM, listingContext, listingId);
+    const factsJson = extractJson(factsText);
+    const facts = parseListingFacts(factsJson);
+
+    // --- LLM Call 2: avionics list ---
+    // Prefer raw description text so bullet-point avionics sections are readable;
+    // fall back to full listing context if description is absent or empty.
+    const descriptionText = (input.rawAttributes['description'] as string | undefined
+      ?? Object.values(input.rawAttributes).join('\n')).trim();
+    const avionicsInput = descriptionText.length > 0 ? descriptionText : listingContext;
+    const avListText = await callLlm(client, model, AVIONICS_LIST_SYSTEM, avionicsInput, listingId);
+    const avListJson = extractJson(avListText);
+    const avionicsList = parseAvionicsList(avListJson);
+
+    // --- LLM Call 3: avionics classification (skip if list is empty) ---
+    let avClass: AvionicsClass = {
+      avionics_type: null, autopilot_capability: null,
+      ifr_avionics_equipped: null, ifr_capability_level: null,
+      confidence: {},
+    };
+    if (avionicsList.length > 0) {
+      const avClassText = await callLlm(
+        client, model, AVIONICS_CLASS_SYSTEM,
+        `Equipment list:\n${JSON.stringify(avionicsList, null, 2)}`,
+        listingId,
+      );
+      const avClassJson = extractJson(avClassText);
+      avClass = parseAvionicsClass(avClassJson);
     }
 
-    const text = response.content
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as { type: 'text'; text: string }).text)
-      .join('');
+    const ifrEquippedConf = avClass.confidence['ifr_avionics_equipped'] ?? 'Low';
 
-    // Extract JSON object from response
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) {
-      return { listingId, error: 'No JSON object found in LLM response' };
-    }
+    // --- Assemble indicators ---
+    const indicators: StructuredIndicators = {
+      // Avionics (from LLM Call 3)
+      avionics_type:       ind(avClass.avionics_type,       avClass.confidence['avionics_type'] ?? 'Low'),
+      autopilot_capability: ind(avClass.autopilot_capability, avClass.confidence['autopilot_capability'] ?? 'Low'),
+      ifr_approval:        computeIfrApproval(avClass.ifr_avionics_equipped, ifrEquippedConf, certified, vfrOnly),
+      ifr_capability_level: ind(avClass.ifr_capability_level, avClass.confidence['ifr_capability_level'] ?? 'Low'),
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(match[0]);
-    } catch {
-      return { listingId, error: 'Failed to parse JSON from LLM response' };
-    }
+      // Engine & airworthiness (from LLM Call 1)
+      engine_state:        ind(facts.engine_state,        facts.engine_state        ? 'High' : 'Low'),
+      smoh_hours:          nind(facts.smoh_hours, facts.smoh_hours !== null ? 'High' : 'Low'),
+      condition_band:      ind(facts.condition_band,      facts.condition_band      ? 'High' : 'Low'),
+      airworthiness_basis: ind(facts.airworthiness_basis, facts.airworthiness_basis ? 'High' : 'Low'),
 
-    const normalised = normaliseLlmResponse(parsed);
-    const indicators = validateIndicators(normalised, listingId);
-    if (!indicators) {
-      return { listingId, error: 'LLM response failed schema validation (missing or invalid fields)' };
-    }
+      // Aircraft profile (deterministic from specs table)
+      aircraft_type_category: specs
+        ? ind(specs.typeCategory, 'High')
+        : ind(null, 'Low'),
+      passenger_capacity: specs
+        ? banded(specs.seats, seatBand(specs.seats), 'High')
+        : banded(null, null, 'Low'),
+      typical_range: specs
+        ? banded(specs.rangeNm, rangeBand(specs.rangeNm), 'High')
+        : banded(null, null, 'Low'),
+      typical_cruise_speed: specs
+        ? banded(specs.cruiseKts, cruiseBand(specs.cruiseKts), 'High')
+        : banded(null, null, 'Low'),
+      typical_fuel_burn: specs
+        ? banded(specs.fuelBurnGph, fuelBand(specs.fuelBurnGph), 'High')
+        : banded(null, null, 'Low'),
 
-    // Override registration_country with deterministic value if we derived it
-    if (derivedCountry && (indicators.registration_country.value === null || indicators.registration_country.confidence !== 'High')) {
-      indicators.registration_country = { value: derivedCountry, confidence: 'High' };
-    }
+      // Costs (deterministic from specs)
+      maintenance_cost_band: specs
+        ? ind(maintenanceBand(specs.typeCategory), 'High')
+        : ind(null, 'Low'),
+      fuel_cost_band: specs
+        ? ind(fuelBand(specs.fuelBurnGph), 'High')
+        : ind(null, 'Low'),
 
-    const populated = ALL_FIELDS.filter((f) => {
-      const ind = indicators[f] as Record<string, unknown>;
-      return ind.value !== null;
-    }).length;
+      // Provenance (from LLM Call 1)
+      maintenance_program: ind(facts.maintenance_program, facts.maintenance_program ? 'High' : 'Low'),
+      registration_country: ind(
+        derivedCountry ?? null,
+        derivedCountry ? 'High' : 'Low',
+      ),
+      ownership_structure: ind(facts.ownership_structure, facts.ownership_structure ? 'High' : 'Low'),
+      hangar_situation:    ind(facts.hangar_situation,    facts.hangar_situation    ? 'High' : 'Low'),
 
-    logger.debug({ listingId, populated }, 'Indicator deriver: done');
+      // Redundancy (deterministic from specs)
+      redundancy_level: specs
+        ? ind(redundancyFromType(specs.typeCategory), 'High')
+        : ind(null, 'Low'),
+    };
+
+    // Override registration_country with any LLM-derived country if prefix lookup was empty
+    // (already handled above — derivedCountry takes priority)
+
+    const populated = Object.values(indicators)
+      .filter(v => typeof v === 'object' && v !== null && (v as Record<string, unknown>).value !== null)
+      .length;
+
+    logger.debug({ listingId, populated, certified, avionics: avionicsList.length, ifrApproval: indicators.ifr_approval.value }, 'Indicator deriver: done');
 
     return { listingId, indicators };
+
   } catch (err) {
     const msg = (err as Error).message;
     logger.error({ listingId, err: msg }, 'Indicator deriver: failed');

@@ -1,0 +1,30 @@
+Vans RV-7 - G-RVII - Experimental / EASA Annex II, White Waltham
+
+Aircraft Type: Single Engine Fixed Wing
+Year: 2017
+Make: Vans Aircraft
+Model: RV-7
+Reg Number: G-RVII
+Airframe Hours: 412
+Engine Make: Lycoming O-360-A1A
+Engine Hours: 412 (from new, 2017 build)
+Prop Make: Whirl Wind 200RV composite 2-blade
+ARC: LAA Permit to Fly, valid to October 2025
+
+Price: £62,500
+
+Avionics:
+- Dynon SkyView HDX 10" (primary EFIS)
+- Dynon SkyView 7" (co-pilot display)
+- Dynon SkyView autopilot (roll and pitch servos, altitude hold, nav tracking)
+- Garmin GTR 225 VHF comm
+- Garmin GTX 45R ADS-B Out (1090ES)
+- GRT Mini AHRS backup
+
+Full glass cockpit, VFR-based build. No ILS receiver, no VOR installed. GPS moving map only.
+
+Experimental EASA Annex II (LAA Permit to Fly). Not EASA type-certificated. VFR day operations. Built by current owner from Vans kit over 7 years.
+
+Based at White Waltham Airfield (EGLM). Hangared. Single owner (original builder).
+
+Notes: Beautifully finished RV-7 with full Dynon SkyView glass and autopilot. Lightweight, fast, economical. Note: permit aircraft, VFR day only — no IFR approval. No scheduled maintenance programme.

@@ -1,0 +1,21 @@
+{
+  "_fixture": "tb20-ifr-enhanced.txt",
+  "_notes": "SOCATA TB20, twin WAAS GNS 530W/430W, S-TEC 55X 2-axis AP, ADS-B, T-hangar, full ownership",
+  "required": {
+    "aircraft_type_category": "Single Piston",
+    "avionics_type": "Hybrid",
+    "ifr_approval": "IFR Approved",
+    "ifr_capability_level": "Enhanced",
+    "airworthiness_basis": "Type Certificated",
+    "registration_country": "United Kingdom",
+    "ownership_structure": "Full Ownership",
+    "hangar_situation": "T-Hangar"
+  },
+  "flexible": {
+    "autopilot_capability": ["Modern Integrated", "Basic"],
+    "engine_state": ["Green", "Amber"],
+    "condition_band": ["Green", "Amber"],
+    "redundancy_level": ["Medium", "Low"]
+  },
+  "non_null": ["passenger_capacity", "typical_range", "typical_cruise_speed", "typical_fuel_burn", "smoh_hours"]
+}
