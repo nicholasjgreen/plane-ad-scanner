@@ -53,6 +53,48 @@ function makeAnthropicMock(...responses: string[]): Anthropic {
   return { messages: { create: mock } } as unknown as Anthropic;
 }
 
+// Realistic Avidyne Entegra description text as an AFORS listing would produce it
+// (under 'seller_notes', not 'description' — tests the non-standard-key fix)
+const AFORS_SR20_SELLER_NOTES = [
+  'Wilco Aviation are pleased to exclusively present to the market a 1/4 share in this Cirrus Design',
+  'SR20 G2, registration G-CHPG, currently based at Dunkeswell Aerodrome in the South West of England.',
+  'This particular aircraft, G-CHPG, is a 2006 example and is equipped with the Avidyne Entegra avionics',
+  'suite, further enhanced by a pair of upgraded Avidyne IFD440 NAV/COM/GPS units along with an Avidyne',
+  'AXP340 transponder, providing a well-equipped and capable avionics package suitable for both touring',
+  'and instrument flying. Avidyne Entegra Primary Flight Display (PFD) provides a full glass cockpit.',
+].join(' ');
+
+const AFORS_SR20_INPUT: IndicatorDeriverInput = {
+  listingId: 'afors-66905',
+  rawAttributes: {
+    // Intentionally no 'description' key — text is under 'seller_notes' (AFORS style)
+    seller_notes: AFORS_SR20_SELLER_NOTES,
+    Make: 'Cirrus',
+    Model: 'SR20',
+    Year: '2006',
+    Registration: 'G-CHPG',
+    Price: '£35,000',
+  },
+  aircraftType: 'Cirrus SR20 G2',
+  make: 'Cirrus',
+  model: 'SR20',
+  registration: 'G-CHPG',
+};
+
+const AFORS_AVIONICS_LIST = JSON.stringify([
+  'Avidyne Entegra PFD (Primary Flight Display)',
+  'Avidyne Entegra MFD (Multi-Function Display)',
+  'Avidyne IFD440 NAV/COM/GPS',
+  'Avidyne AXP340 ADS-B transponder',
+]);
+
+const AFORS_AVIONICS_CLASS = JSON.stringify({
+  avionics_type:         { value: 'Glass Cockpit',      confidence: 'High' },
+  autopilot_capability:  { value: null,                 confidence: 'Low' },
+  ifr_avionics_equipped: { value: 'Equipped',           confidence: 'High' },
+  ifr_capability_level:  { value: 'Advanced',           confidence: 'High' },
+});
+
 describe('indicator-deriver agent', () => {
   it('returns error result (not throw) when LLM throws', async () => {
     const mock = vi.fn().mockRejectedValue(new Error('API error'));
@@ -148,5 +190,40 @@ describe('indicator-deriver agent', () => {
     expect(result.indicators!.engine_state.value).toBe('Green');
     expect(result.indicators!.avionics_type.value).toBe('Glass Cockpit');
     expect(result.indicators!.registration_country.value).toBe('United Kingdom');
+  });
+
+  describe('regression: avionics text under non-"description" key (AFORS G-CHPG bug)', () => {
+    it('extracts avionics list when description is under "seller_notes" key', async () => {
+      const mock = vi.fn()
+        .mockResolvedValueOnce({ content: [{ type: 'text', text: '{}' }] })           // Call 1: facts
+        .mockResolvedValueOnce({ content: [{ type: 'text', text: AFORS_AVIONICS_LIST }] }) // Call 2: avionics list
+        .mockResolvedValueOnce({ content: [{ type: 'text', text: AFORS_AVIONICS_CLASS }] }); // Call 3: classification
+      const anthropic = { messages: { create: mock } } as unknown as Anthropic;
+
+      const result = await runIndicatorDeriver(AFORS_SR20_INPUT, anthropic, 'test-model');
+
+      expect(result.error).toBeUndefined();
+      expect(result.indicators).toBeDefined();
+      expect(result.indicators!.avionics_type.value).toBe('Glass Cockpit');
+      expect(result.indicators!.ifr_capability_level.value).toBe('Advanced');
+      expect(result.indicators!.registration_country.value).toBe('United Kingdom');
+    });
+
+    it('passes long text values to the avionics-list LLM call (not just raw JSON)', async () => {
+      const mock = vi.fn()
+        .mockResolvedValueOnce({ content: [{ type: 'text', text: '{}' }] })
+        .mockResolvedValueOnce({ content: [{ type: 'text', text: AFORS_AVIONICS_LIST }] })
+        .mockResolvedValueOnce({ content: [{ type: 'text', text: AFORS_AVIONICS_CLASS }] });
+      const anthropic = { messages: { create: mock } } as unknown as Anthropic;
+
+      await runIndicatorDeriver(AFORS_SR20_INPUT, anthropic, 'test-model');
+
+      // The second LLM call (avionics list) must include the seller_notes prose text,
+      // not just the JSON attribute dump — this is the fix for the non-standard key bug.
+      const call2UserContent = mock.mock.calls[1][0].messages
+        .find((m: { role: string }) => m.role === 'user')?.content as string;
+      expect(call2UserContent).toContain('Avidyne Entegra');
+      expect(call2UserContent).toContain('IFD440');
+    });
   });
 });

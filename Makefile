@@ -1,4 +1,4 @@
-.PHONY: start stop logs dev scan rescore test coverage build lint lint-fix clear-listings reset-sites reset-indicators derive-indicators help
+.PHONY: start stop logs dev scan rescore test coverage build lint lint-fix clear-listings reset-sites reset-indicators derive-indicators dump-listings help
 
 IMAGE := plane-ad-scanner-test
 
@@ -67,6 +67,10 @@ reset-indicators:
 ## Pass LIMIT=N to process only N listings, e.g: make derive-indicators LIMIT=3
 derive-indicators:
 	docker compose run --rm --build scan npm run derive-indicators -- $(LIMIT)
+
+## Dump all listings from the DB with raw_attributes (pass BRIEF=1 for single-line table)
+dump-listings:
+	docker compose run --rm scan npm run dump-listings -- $(if $(BRIEF),--brief,)
 
 ## Show this help
 help:

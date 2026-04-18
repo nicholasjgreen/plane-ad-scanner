@@ -365,11 +365,16 @@ export async function runIndicatorDeriver(
     const facts = parseListingFacts(factsJson);
 
     // --- LLM Call 2: avionics list ---
-    // Prefer raw description text so bullet-point avionics sections are readable;
-    // fall back to full listing context if description is absent or empty.
-    const descriptionText = (input.rawAttributes['description'] as string | undefined
-      ?? Object.values(input.rawAttributes).join('\n')).trim();
-    const avionicsInput = descriptionText.length > 0 ? descriptionText : listingContext;
+    // Always include the full listingContext (key:value JSON of all attributes) so the LLM
+    // never misses avionics details due to a non-standard attribute key name.
+    // Prepend any long free-text attribute values (>100 chars) as readable prose first —
+    // handles description/seller_notes/notes/avionics regardless of how the site labels them.
+    const longTextValues = Object.values(input.rawAttributes)
+      .filter((v): v is string => typeof v === 'string' && v.length > 100)
+      .join('\n\n');
+    const avionicsInput = longTextValues
+      ? `${longTextValues}\n\n${listingContext}`
+      : listingContext;
     const avListText = await callLlm(client, model, AVIONICS_LIST_SYSTEM, avionicsInput, listingId);
     const avListJson = extractJson(avListText);
     const avionicsList = parseAvionicsList(avListJson);

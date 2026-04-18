@@ -19,6 +19,7 @@
     "derive-indicators":   "tsx src/cli/derive-indicators.ts",
     "indicator-diag":      "tsx src/cli/indicator-diag.ts",
     "indicator-bench":     "tsx src/cli/indicator-bench.ts",
+    "dump-listings":       "tsx src/cli/dump-listings.ts",
     "scraper-diag":   "tsx src/cli/scraper-diag.ts",
     "card-diag":      "tsx src/cli/card-diag.ts",
     "test":           "vitest run",
